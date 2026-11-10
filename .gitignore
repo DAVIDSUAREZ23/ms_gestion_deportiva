@@ -1,0 +1,8 @@
+/dist
+/node_modules
+/coverage
+.env
+*.tsbuildinfo
+.idea/
+.vscode/
+npm-debug.log*
