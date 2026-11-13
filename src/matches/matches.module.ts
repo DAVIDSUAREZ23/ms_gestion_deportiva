@@ -5,6 +5,7 @@ import { MatchAnnotation } from '../match-annotations/entities/match-annotation.
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PhasesModule } from '../phases/phases.module';
 import { TeamsModule } from '../teams/teams.module';
+import { Ticket } from '../tickets/entities/ticket.entity';
 import { TournamentRegistrationsModule } from '../tournament-registrations/tournament-registrations.module';
 import { TournamentVenuesModule } from '../tournament-venues/tournament-venues.module';
 import { VenuesModule } from '../venues/venues.module';
@@ -15,7 +16,7 @@ import { MatchesService } from './matches.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Match, MatchAnnotation]),
+    TypeOrmModule.forFeature([Match, MatchAnnotation, Ticket]),
     PhasesModule,
     GroupsModule,
     TeamsModule,

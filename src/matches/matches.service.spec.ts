@@ -12,6 +12,7 @@ import { SportMapper } from '../sports/mappers/sport.mapper';
 import { Team } from '../teams/entities/team.entity';
 import { TeamMapper } from '../teams/mappers/team.mapper';
 import { TeamsService } from '../teams/teams.service';
+import { Ticket } from '../tickets/entities/ticket.entity';
 import { TournamentRegistrationsService } from '../tournament-registrations/tournament-registrations.service';
 import { TournamentVenuesService } from '../tournament-venues/tournament-venues.service';
 import { TournamentMapper } from '../tournaments/mappers/tournament.mapper';
@@ -35,6 +36,7 @@ const GROUP_MATCH: CreateMatchDto = {
 
 describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
   let matchesRepository: RepositoryMock<Match>;
+  let ticketsRepository: RepositoryMock<Ticket>;
   let phasesService: { findOrFail: jest.Mock };
   let groupsService: { findOrFail: jest.Mock };
   let notificationsService: { notifyMatchCreated: jest.Mock; notifyMatchResult: jest.Mock };
@@ -44,6 +46,7 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     matchesRepository = createRepositoryMock<Match>();
     const annotationsRepository = createRepositoryMock<MatchAnnotation>();
     annotationsRepository.find.mockResolvedValue([]);
+    ticketsRepository = createRepositoryMock<Ticket>();
     phasesService = { findOrFail: jest.fn().mockResolvedValue(GROUP_PHASE) };
     groupsService = { findOrFail: jest.fn().mockResolvedValue(buildGroup(GROUP_PHASE, [HOME, AWAY])) };
     notificationsService = { notifyMatchCreated: jest.fn(), notifyMatchResult: jest.fn() };
@@ -53,6 +56,7 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     service = new MatchesService(
       asRepository(matchesRepository),
       asRepository(annotationsRepository),
+      asRepository(ticketsRepository),
       phasesService as unknown as PhasesService,
       groupsService as unknown as GroupsService,
       teamsService as unknown as TeamsService,
@@ -119,6 +123,14 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE, { status: MatchStatus.FINISHED }));
 
     await expect(service.update(50, { scheduledAt: '2999-02-11T15:00:00' })).rejects.toThrow(BadRequestException);
+  });
+
+  it('remove de un partido con boletos vendidos responde conflicto', async () => {
+    matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE));
+    ticketsRepository.existsBy.mockResolvedValue(true);
+
+    await expect(service.remove(50)).rejects.toThrow(ConflictException);
+    expect(matchesRepository.remove).not.toHaveBeenCalled();
   });
 
   it('remove de un partido con resultado responde conflicto', async () => {

@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Phase, PhaseType } from '../phases/entities/phase.entity';
 import { PhasesService } from '../phases/phases.service';
 import { Team } from '../teams/entities/team.entity';
+import { Ticket } from '../tickets/entities/ticket.entity';
 import { TeamsService } from '../teams/teams.service';
 import { TournamentRegistrationsService } from '../tournament-registrations/tournament-registrations.service';
 import { TournamentVenuesService } from '../tournament-venues/tournament-venues.service';
@@ -46,6 +47,7 @@ export class MatchesService {
   constructor(
     @InjectRepository(Match) private readonly matchesRepository: Repository<Match>,
     @InjectRepository(MatchAnnotation) private readonly annotationsRepository: Repository<MatchAnnotation>,
+    @InjectRepository(Ticket) private readonly ticketsRepository: Repository<Ticket>,
     private readonly phasesService: PhasesService,
     private readonly groupsService: GroupsService,
     private readonly teamsService: TeamsService,
@@ -90,6 +92,9 @@ export class MatchesService {
     if (this.changesTeams(match, dto) && (await this.hasAnnotations(id))) {
       throw new ConflictException('No se pueden cambiar los equipos de un partido que ya tiene anotaciones');
     }
+    if (this.changesVenue(match, dto) && (await this.hasTickets(id))) {
+      throw new ConflictException('No se puede cambiar el escenario de un partido con boletos vendidos');
+    }
     const plan = await this.resolvePlan(
       {
         phaseId: match.phase.id,
@@ -108,8 +113,8 @@ export class MatchesService {
 
   async remove(id: number): Promise<{ message: string }> {
     const match = await this.findOrFail(id);
-    if (match.status === MatchStatus.FINISHED || (await this.hasAnnotations(id))) {
-      throw new ConflictException('No se puede eliminar un partido con resultado o anotaciones registradas');
+    if (match.status === MatchStatus.FINISHED || (await this.hasAnnotations(id)) || (await this.hasTickets(id))) {
+      throw new ConflictException('No se puede eliminar un partido con resultado, anotaciones o boletos vendidos. Puedes cancelarlo.');
     }
     await this.matchesRepository.remove(match);
     return { message: `Partido ${match.homeTeam.name} vs ${match.awayTeam.name} eliminado correctamente` };
@@ -256,6 +261,14 @@ export class MatchesService {
       (dto.homeTeamId !== undefined && dto.homeTeamId !== match.homeTeam.id) ||
       (dto.awayTeamId !== undefined && dto.awayTeamId !== match.awayTeam.id)
     );
+  }
+
+  private changesVenue(match: Match, dto: UpdateMatchDto): boolean {
+    return dto.venueId !== undefined && dto.venueId !== (match.venue?.id ?? null);
+  }
+
+  private hasTickets(matchId: number): Promise<boolean> {
+    return this.ticketsRepository.existsBy({ match: { id: matchId } });
   }
 
   private hasAnnotations(matchId: number): Promise<boolean> {

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { FanTeam } from '../fans/entities/fan-team.entity';
+import { Ticket, TicketStatus } from '../tickets/entities/ticket.entity';
 
 export type MatchNotification = {
   matchId: number;
@@ -29,7 +30,10 @@ export type ResultNotification = MatchNotification & {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(@InjectRepository(FanTeam) private readonly fanTeamsRepository: Repository<FanTeam>) {}
+  constructor(
+    @InjectRepository(FanTeam) private readonly fanTeamsRepository: Repository<FanTeam>,
+    @InjectRepository(Ticket) private readonly ticketsRepository: Repository<Ticket>,
+  ) {}
 
   // Partido nuevo: aficionados activos que siguen a cualquiera de los dos equipos (Aficionado Equipo)
   async notifyMatchCreated(match: MatchNotification): Promise<void> {
@@ -65,9 +69,13 @@ export class NotificationsService {
     return [...new Set(follows.map((follow) => follow.fan.email))];
   }
 
-  // Aún no existen boletos ni apuestas (fases 3 y 4), así que no hay aficionados a quienes avisar
-  private async holdersOf(_matchId: number): Promise<string[]> {
-    return [];
+  // Correos (sin repetir) de los aficionados activos con boleto vigente para el partido (las apuestas llegan en la fase 4)
+  private async holdersOf(matchId: number): Promise<string[]> {
+    const tickets = await this.ticketsRepository.find({
+      where: { match: { id: matchId }, status: TicketStatus.ACTIVE, fan: { active: true } },
+      relations: { fan: true },
+    });
+    return [...new Set(tickets.map((ticket) => ticket.fan.email))];
   }
 
   private async deliver(recipients: string[], message: string): Promise<void> {
