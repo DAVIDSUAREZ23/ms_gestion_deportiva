@@ -61,6 +61,8 @@ export class MatchesService {
     const saved = await this.matchesRepository.save(Object.assign(new Match(), plan));
     await this.notificationsService.notifyMatchCreated({
       matchId: saved.id,
+      homeTeamId: plan.homeTeam.id,
+      awayTeamId: plan.awayTeam.id,
       homeTeam: plan.homeTeam.name,
       awayTeam: plan.awayTeam.name,
     });
@@ -126,6 +128,8 @@ export class MatchesService {
     await this.matchesRepository.save(match);
     await this.notificationsService.notifyMatchResult({
       matchId: id,
+      homeTeamId: match.homeTeam.id,
+      awayTeamId: match.awayTeam.id,
       homeTeam: match.homeTeam.name,
       awayTeam: match.awayTeam.name,
       homeScore: dto.homeScore,

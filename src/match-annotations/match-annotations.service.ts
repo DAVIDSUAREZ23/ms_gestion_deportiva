@@ -39,6 +39,8 @@ export class MatchAnnotationsService {
     );
     await this.notificationsService.notifyAnnotation({
       matchId: match.id,
+      homeTeamId: match.homeTeam.id,
+      awayTeamId: match.awayTeam.id,
       homeTeam: match.homeTeam.name,
       awayTeam: match.awayTeam.name,
       playerName: `${player.firstName} ${player.lastName}`,

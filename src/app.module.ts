@@ -12,6 +12,7 @@ import { SkillsModule } from './skills/skills.module';
 import { SportsModule } from './sports/sports.module';
 import { TeamSportsModule } from './team-sports/team-sports.module';
 import { TeamsModule } from './teams/teams.module';
+import { FansModule } from './fans/fans.module';
 import { GroupsModule } from './groups/groups.module';
 import { MatchAnnotationsModule } from './match-annotations/match-annotations.module';
 import { MatchesModule } from './matches/matches.module';
@@ -57,6 +58,8 @@ import { VenuesModule } from './venues/venues.module';
     MatchesModule,
     MatchAnnotationsModule,
     TournamentOverviewModule,
+    // Aficionados (Aficionado y Aficionado Equipo)
+    FansModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: SecurityGuard }],
