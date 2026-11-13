@@ -4,6 +4,7 @@ import { Not, Repository } from 'typeorm';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { PlayerContract } from '../player-contracts/entities/player-contract.entity';
 import { TeamSport } from '../team-sports/entities/team-sport.entity';
+import { TournamentRegistration } from '../tournament-registrations/entities/tournament-registration.entity';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { TeamResponseDto } from './dto/team-response.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
@@ -17,6 +18,7 @@ export class TeamsService {
     @InjectRepository(Team) private readonly teamsRepository: Repository<Team>,
     @InjectRepository(TeamSport) private readonly teamSportsRepository: Repository<TeamSport>,
     @InjectRepository(PlayerContract) private readonly contractsRepository: Repository<PlayerContract>,
+    @InjectRepository(TournamentRegistration) private readonly registrationsRepository: Repository<TournamentRegistration>,
     private readonly teamMapper: TeamMapper,
   ) {}
 
@@ -85,13 +87,15 @@ export class TeamsService {
   }
 
   private async ensureHasNoDependencies(team: Team): Promise<void> {
-    const [hasSports, hasContracts] = await Promise.all([
+    // Grupos y partidos exigen inscripción, así que basta con revisar las inscripciones a torneos
+    const [hasSports, hasContracts, hasRegistrations] = await Promise.all([
       this.teamSportsRepository.existsBy({ team: { id: team.id } }),
       this.contractsRepository.existsBy({ team: { id: team.id } }),
+      this.registrationsRepository.existsBy({ team: { id: team.id } }),
     ]);
-    if (hasSports || hasContracts) {
+    if (hasSports || hasContracts || hasRegistrations) {
       throw new ConflictException(
-        `No se puede eliminar "${team.name}" porque tiene deportes o jugadores asociados. Puedes desactivarlo.`,
+        `No se puede eliminar "${team.name}" porque tiene deportes, jugadores o torneos asociados. Puedes desactivarlo.`,
       );
     }
   }

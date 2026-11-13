@@ -63,6 +63,31 @@ Cada recurso tiene `dto/`, `entities/`, `mappers/`, controlador, servicio y mód
 | Jugador–habilidad | `POST /player-skills`, `DELETE /player-skills/:playerId/:skillId`, `GET /players/:id/skills`, `GET /skills/:id/players` |
 | Perfil | `GET /players/:id/profile` |
 
+### Módulo Gestión de Competencias (HU-GC-01 a HU-GC-08)
+
+| Recurso | Rutas |
+|---|---|
+| Escenarios | `GET/POST /venues`, `GET/PATCH/DELETE /venues/:id`, `PATCH /venues/:id/status` |
+| Torneos (GC-01) | `GET/POST /tournaments`, `GET/PATCH/DELETE /tournaments/:id`, `PATCH /tournaments/:id/status` |
+| Inscripciones (GC-02) | `POST /tournament-registrations`, `DELETE /tournament-registrations/:tournamentId/:teamId`, `GET /tournaments/:id/teams`, `GET /teams/:id/tournaments` |
+| Fases (GC-03 y GC-05) | `POST /phases`, `GET/PATCH/DELETE /phases/:id`, `GET /tournaments/:id/phases` |
+| Grupos (GC-04) | `POST /groups`, `GET/PATCH/DELETE /groups/:id`, `GET /phases/:id/groups`, `POST /group-teams`, `DELETE /group-teams/:groupId/:teamId` |
+| Partidos (GC-06) | `POST /matches`, `GET/PATCH/DELETE /matches/:id`, `PATCH /matches/:id/result`, `PATCH /matches/:id/cancel`, `GET /phases/:id/matches` |
+| Anotaciones (GC-07) | `POST /match-annotations`, `PATCH/DELETE /match-annotations/:id`, `GET /matches/:id/annotations` |
+| Desarrollo (GC-08) | `GET /tournaments/:id/overview` |
+
+Reglas principales de competencias:
+
+- **Inscripciones:** el equipo debe practicar el deporte del torneo. Solo se inscribe o retira hasta el cierre de inscripciones y antes del inicio.
+- **Fases:** de grupos (`GROUP_STAGE`) o finales (`KNOCKOUT`), con un orden único dentro del torneo.
+- **Grupos:** solo admiten equipos inscritos, y un equipo no puede estar en dos grupos de la misma fase.
+- **Partidos:**
+  - Local y visitante deben ser distintos y estar inscritos, y la fecha debe caer dentro del torneo.
+  - En fase de grupos, ambos equipos deben ser del mismo grupo. En fase final, cada partido ocupa una posición única en la llave y no puede terminar empatado.
+- **Anotaciones:** el jugador debe tener contrato con uno de los dos equipos en la fecha del partido.
+- **Tabla de posiciones:** 3 puntos por victoria y 1 por empate. Desempata la diferencia de gol, luego los goles a favor.
+- **Notificaciones** (partido nuevo, anotación y resultado): pasan por `NotificationsService`. Por ahora solo se registran en el log, porque los destinatarios llegarán con boletos y apuestas (HU-GC-11).
+
 ## Reglas principales
 
 - **Unicidad:** los nombres de deportes, equipos y habilidades no se repiten, sin importar mayúsculas. El documento del jugador también es único.

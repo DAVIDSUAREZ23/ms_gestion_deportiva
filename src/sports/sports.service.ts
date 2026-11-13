@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { TeamSport } from '../team-sports/entities/team-sport.entity';
+import { Tournament } from '../tournaments/entities/tournament.entity';
 import { CreateSportDto } from './dto/create-sport.dto';
 import { SportDetailResponseDto, SportResponseDto } from './dto/sport-response.dto';
 import { UpdateSportDto } from './dto/update-sport.dto';
@@ -15,6 +16,7 @@ export class SportsService {
   constructor(
     @InjectRepository(Sport) private readonly sportsRepository: Repository<Sport>,
     @InjectRepository(TeamSport) private readonly teamSportsRepository: Repository<TeamSport>,
+    @InjectRepository(Tournament) private readonly tournamentsRepository: Repository<Tournament>,
     private readonly sportMapper: SportMapper,
   ) {}
 
@@ -107,10 +109,13 @@ export class SportsService {
   }
 
   private async ensureHasNoDependencies(sport: Sport): Promise<void> {
-    const hasTeams = await this.teamSportsRepository.existsBy({ sport: { id: sport.id } });
-    if (sport.subSports.length > 0 || hasTeams) {
+    const [hasTeams, hasTournaments] = await Promise.all([
+      this.teamSportsRepository.existsBy({ sport: { id: sport.id } }),
+      this.tournamentsRepository.existsBy({ sport: { id: sport.id } }),
+    ]);
+    if (sport.subSports.length > 0 || hasTeams || hasTournaments) {
       throw new ConflictException(
-        `No se puede eliminar "${sport.name}" porque tiene subdeportes o equipos asociados. Puedes desactivarlo.`,
+        `No se puede eliminar "${sport.name}" porque tiene subdeportes, equipos o torneos asociados. Puedes desactivarlo.`,
       );
     }
   }
