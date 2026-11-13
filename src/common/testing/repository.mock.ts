@@ -1,7 +1,7 @@
 import { ObjectLiteral, Repository } from 'typeorm';
 
 export type RepositoryMock<T extends ObjectLiteral> = jest.Mocked<
-  Pick<Repository<T>, 'find' | 'findOne' | 'findOneBy' | 'existsBy' | 'save' | 'remove'>
+  Pick<Repository<T>, 'find' | 'findOne' | 'findOneBy' | 'exists' | 'existsBy' | 'save' | 'remove'>
 >;
 
 // Repositorio de TypeORM simulado para probar los servicios sin base de datos
@@ -10,6 +10,7 @@ export function createRepositoryMock<T extends ObjectLiteral>(): RepositoryMock<
     find: jest.fn(),
     findOne: jest.fn(),
     findOneBy: jest.fn(),
+    exists: jest.fn().mockResolvedValue(false),
     existsBy: jest.fn().mockResolvedValue(false),
     save: jest.fn((entity) => Promise.resolve({ id: 1, ...entity })),
     remove: jest.fn((entity) => Promise.resolve(entity)),

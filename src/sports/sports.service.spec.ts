@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
 import { TeamSport } from '../team-sports/entities/team-sport.entity';
+import { Tournament } from '../tournaments/entities/tournament.entity';
 import { Sport } from './entities/sport.entity';
 import { SportMapper } from './mappers/sport.mapper';
 import { SportsService } from './sports.service';
@@ -20,12 +21,19 @@ function buildSport(overrides: Partial<Sport> = {}): Sport {
 describe('SportsService (HU-GD-01)', () => {
   let sportsRepository: RepositoryMock<Sport>;
   let teamSportsRepository: RepositoryMock<TeamSport>;
+  let tournamentsRepository: RepositoryMock<Tournament>;
   let service: SportsService;
 
   beforeEach(() => {
     sportsRepository = createRepositoryMock<Sport>();
     teamSportsRepository = createRepositoryMock<TeamSport>();
-    service = new SportsService(asRepository(sportsRepository), asRepository(teamSportsRepository), new SportMapper());
+    tournamentsRepository = createRepositoryMock<Tournament>();
+    service = new SportsService(
+      asRepository(sportsRepository),
+      asRepository(teamSportsRepository),
+      asRepository(tournamentsRepository),
+      new SportMapper(),
+    );
   });
 
   it('create con nombre repetido responde conflicto', async () => {
@@ -65,6 +73,14 @@ describe('SportsService (HU-GD-01)', () => {
   it('remove con equipos asociados responde conflicto y no elimina', async () => {
     sportsRepository.findOne.mockResolvedValue(buildSport());
     teamSportsRepository.existsBy.mockResolvedValue(true);
+
+    await expect(service.remove(1)).rejects.toThrow(ConflictException);
+    expect(sportsRepository.remove).not.toHaveBeenCalled();
+  });
+
+  it('remove con torneos asociados responde conflicto y no elimina', async () => {
+    sportsRepository.findOne.mockResolvedValue(buildSport());
+    tournamentsRepository.existsBy.mockResolvedValue(true);
 
     await expect(service.remove(1)).rejects.toThrow(ConflictException);
     expect(sportsRepository.remove).not.toHaveBeenCalled();

@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
 import { PlayerContract } from '../player-contracts/entities/player-contract.entity';
 import { TeamSport } from '../team-sports/entities/team-sport.entity';
+import { TournamentRegistration } from '../tournament-registrations/entities/tournament-registration.entity';
 import { Team } from './entities/team.entity';
 import { TeamMapper } from './mappers/team.mapper';
 import { TeamsService } from './teams.service';
@@ -12,16 +13,19 @@ describe('TeamsService (HU-GD-02)', () => {
   let teamsRepository: RepositoryMock<Team>;
   let teamSportsRepository: RepositoryMock<TeamSport>;
   let contractsRepository: RepositoryMock<PlayerContract>;
+  let registrationsRepository: RepositoryMock<TournamentRegistration>;
   let service: TeamsService;
 
   beforeEach(() => {
     teamsRepository = createRepositoryMock<Team>();
     teamSportsRepository = createRepositoryMock<TeamSport>();
     contractsRepository = createRepositoryMock<PlayerContract>();
+    registrationsRepository = createRepositoryMock<TournamentRegistration>();
     service = new TeamsService(
       asRepository(teamsRepository),
       asRepository(teamSportsRepository),
       asRepository(contractsRepository),
+      asRepository(registrationsRepository),
       new TeamMapper(),
     );
   });
@@ -49,6 +53,14 @@ describe('TeamsService (HU-GD-02)', () => {
   it('remove con deportes asociados responde conflicto y no elimina', async () => {
     teamsRepository.findOneBy.mockResolvedValue(TEAM);
     teamSportsRepository.existsBy.mockResolvedValue(true);
+
+    await expect(service.remove(1)).rejects.toThrow(ConflictException);
+    expect(teamsRepository.remove).not.toHaveBeenCalled();
+  });
+
+  it('remove con inscripciones en torneos responde conflicto y no elimina', async () => {
+    teamsRepository.findOneBy.mockResolvedValue(TEAM);
+    registrationsRepository.existsBy.mockResolvedValue(true);
 
     await expect(service.remove(1)).rejects.toThrow(ConflictException);
     expect(teamsRepository.remove).not.toHaveBeenCalled();

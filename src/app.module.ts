@@ -12,6 +12,14 @@ import { SkillsModule } from './skills/skills.module';
 import { SportsModule } from './sports/sports.module';
 import { TeamSportsModule } from './team-sports/team-sports.module';
 import { TeamsModule } from './teams/teams.module';
+import { GroupsModule } from './groups/groups.module';
+import { MatchAnnotationsModule } from './match-annotations/match-annotations.module';
+import { MatchesModule } from './matches/matches.module';
+import { PhasesModule } from './phases/phases.module';
+import { TournamentOverviewModule } from './tournament-overview/tournament-overview.module';
+import { TournamentRegistrationsModule } from './tournament-registrations/tournament-registrations.module';
+import { TournamentsModule } from './tournaments/tournaments.module';
+import { VenuesModule } from './venues/venues.module';
 
 @Module({
   imports: [
@@ -38,6 +46,15 @@ import { TeamsModule } from './teams/teams.module';
     PlayerContractsModule,
     PlayerSkillsModule,
     PlayerProfilesModule,
+    // Módulo Gestión de Competencias (HU-GC-01 a HU-GC-08)
+    VenuesModule,
+    TournamentsModule,
+    TournamentRegistrationsModule,
+    PhasesModule,
+    GroupsModule,
+    MatchesModule,
+    MatchAnnotationsModule,
+    TournamentOverviewModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: SecurityGuard }],
