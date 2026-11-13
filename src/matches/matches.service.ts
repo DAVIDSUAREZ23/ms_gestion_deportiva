@@ -11,6 +11,7 @@ import { PhasesService } from '../phases/phases.service';
 import { Team } from '../teams/entities/team.entity';
 import { TeamsService } from '../teams/teams.service';
 import { TournamentRegistrationsService } from '../tournament-registrations/tournament-registrations.service';
+import { TournamentVenuesService } from '../tournament-venues/tournament-venues.service';
 import { Venue } from '../venues/entities/venue.entity';
 import { VenuesService } from '../venues/venues.service';
 import { CreateMatchDto } from './dto/create-match.dto';
@@ -50,6 +51,7 @@ export class MatchesService {
     private readonly teamsService: TeamsService,
     private readonly venuesService: VenuesService,
     private readonly registrationsService: TournamentRegistrationsService,
+    private readonly tournamentVenuesService: TournamentVenuesService,
     private readonly notificationsService: NotificationsService,
     private readonly matchMapper: MatchMapper,
   ) {}
@@ -158,7 +160,7 @@ export class MatchesService {
     }
     const [homeTeam, awayTeam] = await this.resolveTeams(phase, input.homeTeamId, input.awayTeamId);
     const scheduledAt = this.resolveSchedule(phase, input.scheduledAt);
-    const venue = input.venueId ? await this.venuesService.findActiveOrFail(input.venueId) : null;
+    const venue = input.venueId ? await this.resolveVenue(phase, input.venueId) : null;
 
     if (phase.type === PhaseType.GROUP_STAGE) {
       const group = await this.resolveGroup(phase, input, homeTeam, awayTeam);
@@ -181,6 +183,13 @@ export class MatchesService {
       await this.registrationsService.ensureRegistered(phase.tournament, team);
     }
     return teams;
+  }
+
+  // El escenario debe estar activo y, si el torneo tiene escenarios asignados, ser uno de ellos
+  private async resolveVenue(phase: Phase, venueId: number): Promise<Venue> {
+    const venue = await this.venuesService.findActiveOrFail(venueId);
+    await this.tournamentVenuesService.ensureVenueAllowed(phase.tournament, venue);
+    return venue;
   }
 
   private resolveSchedule(phase: Phase, scheduledAt: string): Date {

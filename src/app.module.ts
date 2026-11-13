@@ -18,6 +18,7 @@ import { MatchesModule } from './matches/matches.module';
 import { PhasesModule } from './phases/phases.module';
 import { TournamentOverviewModule } from './tournament-overview/tournament-overview.module';
 import { TournamentRegistrationsModule } from './tournament-registrations/tournament-registrations.module';
+import { TournamentVenuesModule } from './tournament-venues/tournament-venues.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { VenuesModule } from './venues/venues.module';
 
@@ -50,6 +51,7 @@ import { VenuesModule } from './venues/venues.module';
     VenuesModule,
     TournamentsModule,
     TournamentRegistrationsModule,
+    TournamentVenuesModule,
     PhasesModule,
     GroupsModule,
     MatchesModule,

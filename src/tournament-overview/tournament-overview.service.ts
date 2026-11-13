@@ -43,7 +43,7 @@ export class TournamentOverviewService {
     const inTournament = { tournament: { id: tournamentId } };
     const [registrations, phases, groups, matches] = await Promise.all([
       this.registrationsRepository.find({ where: inTournament, relations: { team: true }, order: { team: { name: 'ASC' } } }),
-      this.phasesRepository.find({ where: inTournament, order: { order: 'ASC' } }),
+      this.phasesRepository.find({ where: inTournament, relations: { final: true }, order: { order: 'ASC' } }),
       this.groupsRepository.find({
         where: { phase: inTournament },
         relations: { phase: true, groupTeams: { team: true } },
@@ -74,6 +74,7 @@ export class TournamentOverviewService {
 
     return {
       ...this.phaseMapper.toSummaryDto(phase),
+      round: phase.final?.round ?? null,
       groups: phaseGroups,
       matches: phaseMatches,
       playedMatches,

@@ -1,5 +1,6 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn, Unique } from 'typeorm';
 import { CompetitionGroup } from '../../groups/entities/competition-group.entity';
+import { Final } from './final.entity';
 import { Match } from '../../matches/entities/match.entity';
 import { Tournament } from '../../tournaments/entities/tournament.entity';
 
@@ -34,4 +35,8 @@ export class Phase {
 
   @OneToMany(() => Match, (match) => match.phase)
   matches!: Match[];
+
+  // Datos propios de la fase final (ronda); null en fases de grupos
+  @OneToOne(() => Final, (final) => final.phase, { cascade: true })
+  final!: Final | null;
 }

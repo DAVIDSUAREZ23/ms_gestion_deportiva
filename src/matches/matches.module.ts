@@ -6,6 +6,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PhasesModule } from '../phases/phases.module';
 import { TeamsModule } from '../teams/teams.module';
 import { TournamentRegistrationsModule } from '../tournament-registrations/tournament-registrations.module';
+import { TournamentVenuesModule } from '../tournament-venues/tournament-venues.module';
 import { VenuesModule } from '../venues/venues.module';
 import { Match } from './entities/match.entity';
 import { MatchMapper } from './mappers/match.mapper';
@@ -20,6 +21,7 @@ import { MatchesService } from './matches.service';
     TeamsModule,
     VenuesModule,
     TournamentRegistrationsModule,
+    TournamentVenuesModule,
     NotificationsModule,
   ],
   controllers: [MatchesController],

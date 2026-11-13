@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { Match } from '../matches/entities/match.entity';
+import { TournamentVenue } from '../tournament-venues/entities/tournament-venue.entity';
 import { CreateVenueDto } from './dto/create-venue.dto';
 import { UpdateVenueDto } from './dto/update-venue.dto';
 import { VenueResponseDto } from './dto/venue-response.dto';
@@ -15,6 +16,7 @@ export class VenuesService {
   constructor(
     @InjectRepository(Venue) private readonly venuesRepository: Repository<Venue>,
     @InjectRepository(Match) private readonly matchesRepository: Repository<Match>,
+    @InjectRepository(TournamentVenue) private readonly tournamentVenuesRepository: Repository<TournamentVenue>,
     private readonly venueMapper: VenueMapper,
   ) {}
 
@@ -50,9 +52,14 @@ export class VenuesService {
 
   async remove(id: number): Promise<{ message: string }> {
     const venue = await this.findOrFail(id);
-    const hasMatches = await this.matchesRepository.existsBy({ venue: { id } });
-    if (hasMatches) {
-      throw new ConflictException(`No se puede eliminar "${venue.name}" porque tiene partidos asignados. Puedes desactivarlo.`);
+    const [hasMatches, hasTournaments] = await Promise.all([
+      this.matchesRepository.existsBy({ venue: { id } }),
+      this.tournamentVenuesRepository.existsBy({ venue: { id } }),
+    ]);
+    if (hasMatches || hasTournaments) {
+      throw new ConflictException(
+        `No se puede eliminar "${venue.name}" porque tiene partidos o torneos asignados. Puedes desactivarlo.`,
+      );
     }
     await this.venuesRepository.remove(venue);
     return { message: `Escenario "${venue.name}" eliminado correctamente` };

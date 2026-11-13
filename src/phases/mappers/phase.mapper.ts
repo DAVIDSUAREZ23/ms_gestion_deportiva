@@ -31,8 +31,13 @@ export class PhaseMapper {
     return { id: phase.id, name: phase.name, type: phase.type, order: phase.order };
   }
 
+  // Requiere la fase con su torneo y su relación final cargados
   toResponseDto(phase: Phase): PhaseResponseDto {
-    return { ...this.toSummaryDto(phase), tournament: this.tournamentMapper.toSummaryDto(phase.tournament) };
+    return {
+      ...this.toSummaryDto(phase),
+      tournament: this.tournamentMapper.toSummaryDto(phase.tournament),
+      round: phase.final?.round ?? null,
+    };
   }
 
   toResponseDtoList(phases: Phase[]): PhaseResponseDto[] {

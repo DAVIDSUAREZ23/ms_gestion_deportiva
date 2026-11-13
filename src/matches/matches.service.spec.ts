@@ -13,6 +13,7 @@ import { Team } from '../teams/entities/team.entity';
 import { TeamMapper } from '../teams/mappers/team.mapper';
 import { TeamsService } from '../teams/teams.service';
 import { TournamentRegistrationsService } from '../tournament-registrations/tournament-registrations.service';
+import { TournamentVenuesService } from '../tournament-venues/tournament-venues.service';
 import { TournamentMapper } from '../tournaments/mappers/tournament.mapper';
 import { VenueMapper } from '../venues/mappers/venue.mapper';
 import { VenuesService } from '../venues/venues.service';
@@ -57,6 +58,7 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
       teamsService as unknown as TeamsService,
       {} as VenuesService,
       registrationsService as unknown as TournamentRegistrationsService,
+      { ensureVenueAllowed: jest.fn() } as unknown as TournamentVenuesService,
       notificationsService as unknown as NotificationsService,
       new MatchMapper(phaseMapper, new GroupMapper(phaseMapper, new TeamMapper()), new TeamMapper(), new VenueMapper()),
     );
