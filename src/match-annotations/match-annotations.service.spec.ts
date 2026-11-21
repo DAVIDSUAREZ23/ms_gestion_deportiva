@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { buildMatch, buildPhase, HOME, PLAYER } from '../common/testing/competition.fixtures';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
+import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
 import { MatchStatus } from '../matches/entities/match.entity';
 import { MatchesService } from '../matches/matches.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -36,6 +37,7 @@ describe('MatchAnnotationsService (HU-GC-07 anotaciones)', () => {
       playersService as unknown as PlayersService,
       notificationsService as unknown as NotificationsService,
       new MatchAnnotationMapper(new PlayerMapper(), new TeamMapper()),
+      { broadcast: jest.fn() } as unknown as LiveEventsGateway,
     );
   });
 

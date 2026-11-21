@@ -86,7 +86,10 @@ Reglas principales de competencias:
   - En fase de grupos, ambos equipos deben ser del mismo grupo. En fase final, cada partido ocupa una posición única en la llave y no puede terminar empatado.
 - **Anotaciones:** el jugador debe tener contrato con uno de los dos equipos en la fecha del partido.
 - **Tabla de posiciones:** 3 puntos por victoria y 1 por empate. Desempata la diferencia de gol, luego los goles a favor.
-- **Notificaciones** (partido nuevo, anotación y resultado): pasan por `NotificationsService`. Por ahora solo se registran en el log, porque los destinatarios llegarán con boletos y apuestas (HU-GC-11).
+- **Notificaciones** (partido nuevo, anotación y resultado): pasan por `NotificationsService`, que decide a quién avisar y le pide el envío al ms de notificaciones (`POST {MS_NOTIFICATIONS}/send-match-notification`, con la cabecera `X-Internal-Key`). El envío no espera respuesta y un fallo solo se registra en el log; nunca rompe la operación.
+  - **Partido nuevo (GC-06):** aficionados activos con boleto vigente en partidos ya finalizados y anteriores donde jugó alguno de los dos equipos.
+  - **Anotación y resultado (GC-07):** aficionados activos con boleto vigente para el partido. Las apuestas se sumarán cuando existan (HU-GC-11).
+  - Variables: `MS_NOTIFICATIONS` y `NOTIFICATIONS_INTERNAL_KEY` (la misma de ms-notificaciones).
 
 ## Reglas principales
 
@@ -99,3 +102,13 @@ Reglas principales de competencias:
   - Retirarlo guarda `releasedAt` y conserva el contrato como historial de traspasos.
 - **Asociaciones:** exigen que los dos registros existan y estén activos, y no permiten duplicados.
 - **Errores:** todos usan el mismo formato que el ms de seguridad: `{ timestamp, status, error, message, details? }`.
+
+## Eventos en tiempo real (Socket.IO)
+
+El microservicio expone un canal Socket.IO en el mismo puerto (8282), sin prefijo `/api`. Al crear o cancelar un partido, registrar su resultado o una anotación, `LiveEventsGateway` emite `new_notification` con `{ type, message, tournamentId, matchId }` a todos los clientes conectados. Los datos son públicos (marcadores y anotaciones). El `SecurityGuard` solo protege HTTP y deja pasar los eventos del gateway.
+
+Cliente de prueba (Node): `io('http://localhost:8282', { transports: ['websocket'] }).on('new_notification', console.log)`.
+
+## Reportes SQL
+
+Las consultas de reporte viven en `repositories/` de cada módulo (`MatchAnnotationsRepository`, `TicketsRepository`) y usan `DataSource.query`; el CRUD sigue con `Repository<T>`. Reporte nuevo: `GET /api/tournaments/:id/top-scorers?limit=10`.

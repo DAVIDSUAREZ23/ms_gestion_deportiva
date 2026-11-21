@@ -9,6 +9,7 @@ import { VenueSectionsModule } from '../venue-sections/venue-sections.module';
 import { VenuesModule } from '../venues/venues.module';
 import { Ticket } from './entities/ticket.entity';
 import { TicketMapper } from './mappers/ticket.mapper';
+import { TicketsRepository } from './repositories/tickets.repository';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 
@@ -22,6 +23,6 @@ import { TicketsService } from './tickets.service';
     VenuesModule,
   ],
   controllers: [TicketsController],
-  providers: [TicketsService, TicketMapper],
+  providers: [TicketsService, TicketMapper, TicketsRepository],
 })
 export class TicketsModule {}

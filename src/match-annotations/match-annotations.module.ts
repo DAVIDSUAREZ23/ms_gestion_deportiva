@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { LiveEventsModule } from '../gateways/live-events/live-events.module';
 import { MatchesModule } from '../matches/matches.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PlayerContract } from '../player-contracts/entities/player-contract.entity';
@@ -9,6 +10,7 @@ import { MatchAnnotation } from './entities/match-annotation.entity';
 import { MatchAnnotationMapper } from './mappers/match-annotation.mapper';
 import { MatchAnnotationsController } from './match-annotations.controller';
 import { MatchAnnotationsService } from './match-annotations.service';
+import { MatchAnnotationsRepository } from './repositories/match-annotations.repository';
 
 @Module({
   imports: [
@@ -17,9 +19,10 @@ import { MatchAnnotationsService } from './match-annotations.service';
     PlayersModule,
     TeamsModule,
     NotificationsModule,
+    LiveEventsModule,
   ],
   controllers: [MatchAnnotationsController],
-  providers: [MatchAnnotationsService, MatchAnnotationMapper],
-  exports: [MatchAnnotationMapper],
+  providers: [MatchAnnotationsService, MatchAnnotationMapper, MatchAnnotationsRepository],
+  exports: [MatchAnnotationMapper, MatchAnnotationsRepository],
 })
 export class MatchAnnotationsModule {}

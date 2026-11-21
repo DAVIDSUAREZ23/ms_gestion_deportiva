@@ -15,6 +15,7 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
 const PERMISSIONS_VALIDATION_PATH = '/api/internal/security/permissions-validation';
+const INTERNAL_KEY_HEADER = 'X-Internal-Key';
 const REQUEST_TIMEOUT_MS = 5000;
 
 type PermissionValidationResponse = { allowed: boolean; userId: number | null };
@@ -30,7 +31,8 @@ export class SecurityGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (this.isPublic(context)) {
+    // Este guard es solo HTTP: los eventos del gateway (WebSocket) no pasan por él
+    if (context.getType() !== 'http' || this.isPublic(context)) {
       return true;
     }
 
@@ -68,11 +70,21 @@ export class SecurityGuard implements CanActivate {
       throw new ServiceUnavailableException('El servicio de seguridad no está configurado');
     }
 
+    // Identifica a este ms ante seguridad (además del JWT del usuario)
+    const internalKey = this.configService.get<string>('INTERNAL_SERVICE_KEY');
+    if (!internalKey) {
+      this.logger.error('La variable INTERNAL_SERVICE_KEY no está configurada');
+      throw new ServiceUnavailableException('El servicio de seguridad no está configurado');
+    }
+
     try {
       const { data } = await axios.post<PermissionValidationResponse>(
         `${securityUrl}${PERMISSIONS_VALIDATION_PATH}`,
         { url, method },
-        { headers: { Authorization: `Bearer ${token}` }, timeout: REQUEST_TIMEOUT_MS },
+        {
+          headers: { Authorization: `Bearer ${token}`, [INTERNAL_KEY_HEADER]: internalKey },
+          timeout: REQUEST_TIMEOUT_MS,
+        },
       );
       return { allowed: data.allowed === true, userId: data.userId ?? null };
     } catch (error) {
@@ -86,8 +98,10 @@ export class SecurityGuard implements CanActivate {
     if (status === 401) {
       return new UnauthorizedException('Tu sesión no es válida o expiró');
     }
+    // Seguridad responde 200 { allowed: false } cuando falta el permiso; un 403 aquí es la clave interna rechazada
     if (status === 403) {
-      return new ForbiddenException('No tienes permiso para realizar esta acción');
+      this.logger.error('Seguridad rechazó la clave interna (INTERNAL_SERVICE_KEY distinta en ambos ms)');
+      return new ServiceUnavailableException('El servicio de seguridad no está configurado');
     }
     this.logger.error(`No se pudo validar el permiso: ${(error as Error).message}`);
     return new ServiceUnavailableException('No se pudo contactar al servicio de seguridad');

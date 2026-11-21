@@ -15,6 +15,7 @@ import { TeamsModule } from './teams/teams.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { VenueSectionsModule } from './venue-sections/venue-sections.module';
 import { FansModule } from './fans/fans.module';
+import { LiveEventsModule } from './gateways/live-events/live-events.module';
 import { GroupsModule } from './groups/groups.module';
 import { MatchAnnotationsModule } from './match-annotations/match-annotations.module';
 import { MatchesModule } from './matches/matches.module';
@@ -65,6 +66,8 @@ import { VenuesModule } from './venues/venues.module';
     // Boletería (Localidad y Boleto)
     VenueSectionsModule,
     TicketsModule,
+    // Eventos en tiempo real (Socket.IO)
+    LiveEventsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: SecurityGuard }],

@@ -12,6 +12,7 @@ import { BuyTicketDto } from './dto/buy-ticket.dto';
 import { SectionAvailabilityDto, TicketMatchDto, TicketResponseDto } from './dto/ticket-response.dto';
 import { Ticket, TicketStatus } from './entities/ticket.entity';
 import { TicketMapper } from './mappers/ticket.mapper';
+import { TicketsRepository } from './repositories/tickets.repository';
 
 const TICKET_RELATIONS = {
   match: MATCH_RELATIONS,
@@ -30,6 +31,7 @@ export class TicketsService {
     private readonly sectionsService: VenueSectionsService,
     private readonly sectionMapper: VenueSectionMapper,
     private readonly ticketMapper: TicketMapper,
+    private readonly customTicketsRepository: TicketsRepository,
   ) {}
 
   // Partidos con boletería abierta: programados, futuros, con escenario y de un torneo activo
@@ -50,7 +52,7 @@ export class TicketsService {
       where: { venue: { id: match.venue.id }, active: true },
       order: { price: 'DESC' },
     });
-    const sold = await this.countSoldBySection(matchId);
+    const sold = await this.customTicketsRepository.countActiveByMatchAndSection(matchId);
     return sections.map((section) => {
       const soldInSection = sold.get(section.id) ?? 0;
       return {
@@ -150,18 +152,6 @@ export class TicketsService {
     if (sold >= section.capacity) {
       throw new ConflictException(`La localidad "${section.name}" está agotada para este partido`);
     }
-  }
-
-  private async countSoldBySection(matchId: number): Promise<Map<number, number>> {
-    const rows = await this.ticketsRepository
-      .createQueryBuilder('ticket')
-      .select('ticket.section_id', 'sectionId')
-      .addSelect('COUNT(*)', 'sold')
-      .where('ticket.match_id = :matchId', { matchId })
-      .andWhere('ticket.status = :status', { status: TicketStatus.ACTIVE })
-      .groupBy('ticket.section_id')
-      .getRawMany<{ sectionId: number; sold: string }>();
-    return new Map(rows.map((row) => [Number(row.sectionId), Number(row.sold)]));
   }
 
   // Código corto y difícil de adivinar, p. ej. TK-9F3A61C2

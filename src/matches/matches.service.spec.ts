@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AWAY, buildGroup, buildMatch, buildPhase, HOME, OUTSIDER } from '../common/testing/competition.fixtures';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
+import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
 import { GroupMapper } from '../groups/mappers/group.mapper';
 import { GroupsService } from '../groups/groups.service';
 import { MatchAnnotation } from '../match-annotations/entities/match-annotation.entity';
@@ -65,6 +66,7 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
       { ensureVenueAllowed: jest.fn() } as unknown as TournamentVenuesService,
       notificationsService as unknown as NotificationsService,
       new MatchMapper(phaseMapper, new GroupMapper(phaseMapper, new TeamMapper()), new TeamMapper(), new VenueMapper()),
+      { broadcast: jest.fn() } as unknown as LiveEventsGateway,
     );
   });
 
@@ -110,7 +112,15 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     await service.registerResult(50, { homeScore: 2, awayScore: 1 });
 
     expect(match.status).toBe(MatchStatus.FINISHED);
-    expect(notificationsService.notifyMatchResult).toHaveBeenCalled();
+    expect(notificationsService.notifyMatchResult).toHaveBeenCalledWith(expect.objectContaining({ corrected: false }));
+  });
+
+  it('registerResult sobre un partido ya finalizado notifica como corrección', async () => {
+    matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE, { status: MatchStatus.FINISHED }));
+
+    await service.registerResult(50, { homeScore: 3, awayScore: 1 });
+
+    expect(notificationsService.notifyMatchResult).toHaveBeenCalledWith(expect.objectContaining({ corrected: true }));
   });
 
   it('registerResult con empate en fase final responde solicitud inválida', async () => {

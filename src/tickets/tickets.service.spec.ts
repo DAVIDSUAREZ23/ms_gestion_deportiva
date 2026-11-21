@@ -15,6 +15,7 @@ import { Venue } from '../venues/entities/venue.entity';
 import { VenueMapper } from '../venues/mappers/venue.mapper';
 import { Ticket, TicketStatus } from './entities/ticket.entity';
 import { TicketMapper } from './mappers/ticket.mapper';
+import { TicketsRepository } from './repositories/tickets.repository';
 import { TicketsService } from './tickets.service';
 
 const VENUE = Object.assign(new Venue(), { id: 1, name: 'Palogrande', city: 'Manizales', active: true });
@@ -46,6 +47,7 @@ describe('TicketsService (Boleto)', () => {
       sectionsService as unknown as VenueSectionsService,
       new VenueSectionMapper(venueMapper),
       new TicketMapper(new TeamMapper(), venueMapper, new VenueSectionMapper(venueMapper), new FanMapper(new TeamMapper())),
+      { countActiveByMatchAndSection: jest.fn().mockResolvedValue(new Map()) } as unknown as TicketsRepository,
     );
   });
 

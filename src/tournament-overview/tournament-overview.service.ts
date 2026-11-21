@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { CompetitionGroup } from '../groups/entities/competition-group.entity';
 import { MatchAnnotation } from '../match-annotations/entities/match-annotation.entity';
 import { MatchAnnotationMapper } from '../match-annotations/mappers/match-annotation.mapper';
+import { MatchAnnotationsRepository } from '../match-annotations/repositories/match-annotations.repository';
 import { Match, MatchStatus } from '../matches/entities/match.entity';
 import { MatchMapper } from '../matches/mappers/match.mapper';
 import { MATCH_RELATIONS } from '../matches/matches.service';
@@ -17,6 +18,7 @@ import {
   OverviewGroupDto,
   OverviewMatchDto,
   OverviewPhaseDto,
+  TopScorerDto,
   TournamentOverviewResponseDto,
 } from './dto/tournament-overview-response.dto';
 import { calculateStandings } from './standings.calculator';
@@ -36,7 +38,21 @@ export class TournamentOverviewService {
     private readonly teamMapper: TeamMapper,
     private readonly matchMapper: MatchMapper,
     private readonly annotationMapper: MatchAnnotationMapper,
+    private readonly customAnnotationsRepository: MatchAnnotationsRepository,
   ) {}
+
+  // Reporte SQL: máximos anotadores del torneo
+  async getTopScorers(tournamentId: number, limit = 10): Promise<TopScorerDto[]> {
+    await this.tournamentsService.findOrFail(tournamentId);
+    const rows = await this.customAnnotationsRepository.findTopScorers(tournamentId, limit);
+    return rows.map((row) => ({
+      playerId: row.playerId,
+      playerName: `${row.firstName} ${row.lastName}`,
+      teamId: row.teamId,
+      teamName: row.teamName,
+      annotations: row.annotations,
+    }));
+  }
 
   async getOverview(tournamentId: number): Promise<TournamentOverviewResponseDto> {
     const tournament = await this.tournamentsService.findOrFail(tournamentId);

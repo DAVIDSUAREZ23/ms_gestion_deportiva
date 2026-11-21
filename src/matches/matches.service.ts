@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import { toIsoDate } from '../common/utils/date.utils';
 import { CompetitionGroup } from '../groups/entities/competition-group.entity';
+import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
 import { GroupsService } from '../groups/groups.service';
 import { MatchAnnotation } from '../match-annotations/entities/match-annotation.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -56,6 +57,7 @@ export class MatchesService {
     private readonly tournamentVenuesService: TournamentVenuesService,
     private readonly notificationsService: NotificationsService,
     private readonly matchMapper: MatchMapper,
+    private readonly liveEvents: LiveEventsGateway,
   ) {}
 
   async create(dto: CreateMatchDto): Promise<MatchResponseDto> {
@@ -67,6 +69,13 @@ export class MatchesService {
       awayTeamId: plan.awayTeam.id,
       homeTeam: plan.homeTeam.name,
       awayTeam: plan.awayTeam.name,
+      scheduledAt: plan.scheduledAt,
+    });
+    this.liveEvents.broadcast({
+      type: 'match_created',
+      message: `Nuevo partido: ${plan.homeTeam.name} vs ${plan.awayTeam.name}`,
+      tournamentId: plan.phase.tournament.id,
+      matchId: saved.id,
     });
     return this.findOne(saved.id);
   }
@@ -129,6 +138,7 @@ export class MatchesService {
     if (match.phase.type === PhaseType.KNOCKOUT && dto.homeScore === dto.awayScore) {
       throw new BadRequestException('En una fase final el partido debe tener un ganador; registra el marcador definitivo');
     }
+    const wasFinished = match.status === MatchStatus.FINISHED;
     Object.assign(match, { homeScore: dto.homeScore, awayScore: dto.awayScore, status: MatchStatus.FINISHED });
     await this.matchesRepository.save(match);
     await this.notificationsService.notifyMatchResult({
@@ -140,6 +150,14 @@ export class MatchesService {
       homeScore: dto.homeScore,
       awayScore: dto.awayScore,
       scorers: await this.scorerNames(id),
+      corrected: wasFinished,
+    });
+    this.liveEvents.broadcast({
+      type: 'match_result',
+      message: `Resultado: ${match.homeTeam.name} ${dto.homeScore} - ${dto.awayScore} ${match.awayTeam.name}`,
+      tournamentId: match.phase.tournament.id,
+      matchId: id,
+      data: { homeScore: dto.homeScore, awayScore: dto.awayScore },
     });
     return this.findOne(id);
   }
@@ -149,6 +167,12 @@ export class MatchesService {
     this.ensureIsScheduled(match);
     match.status = MatchStatus.CANCELLED;
     await this.matchesRepository.save(match);
+    this.liveEvents.broadcast({
+      type: 'match_cancelled',
+      message: `Partido cancelado: ${match.homeTeam.name} vs ${match.awayTeam.name}`,
+      tournamentId: match.phase.tournament.id,
+      matchId: id,
+    });
     return this.findOne(id);
   }
 

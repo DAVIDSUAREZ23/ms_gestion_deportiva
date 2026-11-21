@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { FanTeam } from '../fans/entities/fan-team.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
+import { NotificationsClient } from './notifications.client';
 import { NotificationsService } from './notifications.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([FanTeam, Ticket])],
-  providers: [NotificationsService],
+  imports: [TypeOrmModule.forFeature([Ticket])],
+  providers: [NotificationsService, NotificationsClient],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

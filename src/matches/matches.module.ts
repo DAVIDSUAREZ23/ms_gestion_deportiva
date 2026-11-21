@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { LiveEventsModule } from '../gateways/live-events/live-events.module';
 import { GroupsModule } from '../groups/groups.module';
 import { MatchAnnotation } from '../match-annotations/entities/match-annotation.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -24,6 +25,7 @@ import { MatchesService } from './matches.service';
     TournamentRegistrationsModule,
     TournamentVenuesModule,
     NotificationsModule,
+    LiveEventsModule,
   ],
   controllers: [MatchesController],
   providers: [MatchesService, MatchMapper],

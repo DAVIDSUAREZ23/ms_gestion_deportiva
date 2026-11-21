@@ -27,6 +27,15 @@ export class OverviewPhaseDto extends PhaseSummaryDto {
   pendingMatches!: number;
 }
 
+// Reporte: jugadores con más anotaciones del torneo
+export class TopScorerDto {
+  playerId!: number;
+  playerName!: string;
+  teamId!: number;
+  teamName!: string;
+  annotations!: number;
+}
+
 export class TournamentOverviewResponseDto {
   tournament!: TournamentResponseDto;
   registeredTeams!: TeamSummaryDto[];

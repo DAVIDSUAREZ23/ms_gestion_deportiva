@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { toIsoDate } from '../common/utils/date.utils';
+import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
 import { Match, MatchStatus } from '../matches/entities/match.entity';
 import { MatchesService } from '../matches/matches.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -27,6 +28,7 @@ export class MatchAnnotationsService {
     private readonly playersService: PlayersService,
     private readonly notificationsService: NotificationsService,
     private readonly annotationMapper: MatchAnnotationMapper,
+    private readonly liveEvents: LiveEventsGateway,
   ) {}
 
   async create(dto: CreateMatchAnnotationDto): Promise<MatchAnnotationResponseDto> {
@@ -46,6 +48,12 @@ export class MatchAnnotationsService {
       playerName: `${player.firstName} ${player.lastName}`,
       teamName: team.name,
       minute: dto.minute,
+    });
+    this.liveEvents.broadcast({
+      type: 'match_annotation',
+      message: `${player.firstName} ${player.lastName} (${team.name}) anotó al minuto ${dto.minute}`,
+      tournamentId: match.phase.tournament.id,
+      matchId: match.id,
     });
     return this.annotationMapper.toResponseDto(saved);
   }
