@@ -27,6 +27,7 @@ import { TournamentRegistrationsModule } from './tournament-registrations/tourna
 import { TournamentVenuesModule } from './tournament-venues/tournament-venues.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { VenuesModule } from './venues/venues.module';
+import { WalletsModule } from './wallets/wallets.module';
 
 @Module({
   imports: [
@@ -65,6 +66,8 @@ import { VenuesModule } from './venues/venues.module';
     TournamentOverviewModule,
     // Aficionados (Aficionado y Aficionado Equipo)
     FansModule,
+    // Monedero del aficionado (recargas, ajustes, ganancias y devoluciones)
+    WalletsModule,
     // Boletería (Localidad y Boleto)
     VenueSectionsModule,
     TicketsModule,

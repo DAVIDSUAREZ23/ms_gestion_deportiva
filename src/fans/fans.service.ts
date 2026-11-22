@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
+import { WalletsService } from '../wallets/services/wallets.service';
 import { CreateFanProfileDto } from './dto/create-fan-profile.dto';
 import { FanDetailResponseDto, FanResponseDto } from './dto/fan-response.dto';
 import { UpdateFanProfileDto } from './dto/update-fan-profile.dto';
@@ -16,6 +17,7 @@ export class FansService {
   constructor(
     @InjectRepository(Fan) private readonly fansRepository: Repository<Fan>,
     private readonly fanMapper: FanMapper,
+    private readonly walletsService: WalletsService,
   ) {}
 
   async getMyProfile(userId: number): Promise<FanDetailResponseDto> {
@@ -27,7 +29,9 @@ export class FansService {
     if (await this.fansRepository.existsBy({ userId })) {
       throw new ConflictException('Ya tienes un perfil de aficionado');
     }
-    await this.fansRepository.save(this.fanMapper.toEntity(userId, dto));
+    const saved = await this.fansRepository.save(this.fanMapper.toEntity(userId, dto));
+    // El monedero se crea junto con el perfil para que el aficionado pueda recargar y apostar
+    await this.walletsService.createForFan(saved.id);
     return this.getMyProfile(userId);
   }
 

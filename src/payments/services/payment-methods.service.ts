@@ -56,6 +56,18 @@ export class PaymentMethodsService {
     return method;
   }
 
+  // Usado internamente para sembrar el método WALLET al pagar con el monedero
+  async findActiveByCodeOrFail(code: string): Promise<PaymentMethod> {
+    const method = await this.methodsRepository.findOneBy({ code });
+    if (!method) {
+      throw new NotFoundException(`Método de pago con código "${code}" no encontrado`);
+    }
+    if (!method.active) {
+      throw new BadRequestException(`El método de pago "${method.name}" está inactivo`);
+    }
+    return method;
+  }
+
   async findOrFail(id: number): Promise<PaymentMethod> {
     const method = await this.methodsRepository.findOneBy({ id });
     if (!method) {

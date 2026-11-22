@@ -56,6 +56,18 @@ export class PaymentGatewaysService {
     return gateway;
   }
 
+  // Usado internamente para registrar el pago con monedero (sin pasarela externa)
+  async findActiveByCodeOrFail(code: string): Promise<PaymentGateway> {
+    const gateway = await this.gatewaysRepository.findOneBy({ code });
+    if (!gateway) {
+      throw new NotFoundException(`Pasarela de pago con código "${code}" no encontrada`);
+    }
+    if (!gateway.active) {
+      throw new BadRequestException(`La pasarela "${gateway.name}" está inactiva`);
+    }
+    return gateway;
+  }
+
   async findOrFail(id: number): Promise<PaymentGateway> {
     const gateway = await this.gatewaysRepository.findOneBy({ id });
     if (!gateway) {

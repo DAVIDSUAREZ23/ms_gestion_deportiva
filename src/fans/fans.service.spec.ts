@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
 import { TeamMapper } from '../teams/mappers/team.mapper';
+import { WalletsService } from '../wallets/services/wallets.service';
 import { Fan } from './entities/fan.entity';
 import { FansService } from './fans.service';
 import { FanMapper } from './mappers/fan.mapper';
@@ -22,20 +23,27 @@ function buildFan(overrides: Partial<Fan> = {}): Fan {
 
 describe('FansService (Aficionado)', () => {
   let fansRepository: RepositoryMock<Fan>;
+  let walletsService: { createForFan: jest.Mock };
   let service: FansService;
 
   beforeEach(() => {
     fansRepository = createRepositoryMock<Fan>();
-    service = new FansService(asRepository(fansRepository), new FanMapper(new TeamMapper()));
+    walletsService = { createForFan: jest.fn().mockResolvedValue(undefined) };
+    service = new FansService(
+      asRepository(fansRepository),
+      new FanMapper(new TeamMapper()),
+      walletsService as unknown as WalletsService,
+    );
   });
 
-  it('createMyProfile crea el perfil enlazado al usuario del token', async () => {
+  it('createMyProfile crea el perfil enlazado al usuario del token y su monedero', async () => {
     fansRepository.findOne.mockResolvedValue(buildFan());
 
     const profile = await service.createMyProfile(7, { displayName: 'Ana Hincha', email: 'ana@correo.com' });
 
     const saved = fansRepository.save.mock.calls[0][0] as Fan;
     expect(saved.userId).toBe(7);
+    expect(walletsService.createForFan).toHaveBeenCalledWith(1);
     expect(profile.displayName).toBe('Ana Hincha');
   });
 
@@ -44,6 +52,7 @@ describe('FansService (Aficionado)', () => {
 
     await expect(service.createMyProfile(7, { displayName: 'Ana', email: 'ana@correo.com' })).rejects.toThrow(ConflictException);
     expect(fansRepository.save).not.toHaveBeenCalled();
+    expect(walletsService.createForFan).not.toHaveBeenCalled();
   });
 
   it('getMyProfile sin perfil responde no encontrado', async () => {

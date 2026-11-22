@@ -1,25 +1,19 @@
 import { randomBytes } from 'node:crypto';
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, MoreThan, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, MoreThan, Repository } from 'typeorm';
+import { roundMoney } from '../../common/utils/money.utils';
 import { FansService } from '../../fans/fans.service';
 import { Match, MatchStatus } from '../../matches/entities/match.entity';
 import { PaymentGatewaysService } from '../../payments/services/payment-gateways.service';
 import { PaymentMethodsService } from '../../payments/services/payment-methods.service';
+import { NO_PAYMENT_GATEWAY_CODE, WALLET_PAYMENT_METHOD_CODE } from '../../wallets/wallets.constants';
+import { WalletsService } from '../../wallets/services/wallets.service';
 import { MAX_BET_AMOUNT, MIN_BET_AMOUNT } from '../bets.constants';
 import { BetResponseDto, UpcomingBetMatchDto } from '../dto/bet-response.dto';
 import { CreateBetDto } from '../dto/create-bet.dto';
 import { Bet, BetStatus } from '../entities/bet.entity';
 import { BetSelection } from '../entities/match-odd.entity';
-import { PAYMENT_GATEWAY } from '../gateways/payment-gateway.port';
-import type { PaymentGatewayPort } from '../gateways/payment-gateway.port';
 import { BetMapper } from '../mappers/bet.mapper';
 import { OddsService } from './odds.service';
 
@@ -42,20 +36,18 @@ const UPCOMING_MATCH_RELATIONS = {
   odds: true,
 } as const;
 
-// Apuestas de los aficionados: una apuesta viva por partido, pago simulado y liquidación con el resultado
+// Apuestas de los aficionados: una apuesta viva por partido, pagada con el monedero y liquidada con el resultado
 @Injectable()
 export class BetsService {
-  private readonly logger = new Logger(BetsService.name);
-
   constructor(
     @InjectRepository(Bet) private readonly betsRepository: Repository<Bet>,
     @InjectRepository(Match) private readonly matchesRepository: Repository<Match>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly fansService: FansService,
     private readonly oddsService: OddsService,
+    private readonly walletsService: WalletsService,
     private readonly paymentMethodsService: PaymentMethodsService,
     private readonly paymentGatewaysService: PaymentGatewaysService,
-    @Inject(PAYMENT_GATEWAY) private readonly paymentGateway: PaymentGatewayPort,
     private readonly betMapper: BetMapper,
   ) {}
 
@@ -77,8 +69,7 @@ export class BetsService {
     this.ensureOpenForBetting(match);
     const odd = await this.oddsService.findActiveOrFail(match.id, dto.selection);
     this.ensureAmount(dto.amount);
-    const paymentMethod = await this.paymentMethodsService.findActiveOrFail(dto.paymentMethodId);
-    const paymentGateway = await this.paymentGatewaysService.findActiveOrFail(dto.paymentGatewayId);
+    const [paymentMethod, paymentGateway] = await this.findWalletFunding();
 
     const bet = Object.assign(new Bet(), {
       code: this.generateCode(),
@@ -88,17 +79,17 @@ export class BetsService {
       amount: dto.amount,
       odds: odd.odds,
       potentialPayout: roundMoney(dto.amount * odd.odds),
-      status: BetStatus.PENDING_PAYMENT,
+      status: BetStatus.ACTIVE,
       paymentMethod,
       paymentGateway,
       paymentReference: null,
-      paidAt: null,
+      paidAt: new Date(),
       settledAt: null,
     });
 
-    // El bloqueo sobre el aficionado serializa dos apuestas simultáneas al mismo partido
-    const saved = await this.saveWithFanLock(bet, fan.id);
-    return this.charge(saved);
+    // El bloqueo del aficionado serializa dos apuestas simultáneas y el del monedero evita gastar dos veces el saldo
+    const saved = await this.saveWithFunds(bet, fan.id);
+    return this.betMapper.toResponseDto(saved);
   }
 
   async findMine(userId: number): Promise<BetResponseDto[]> {
@@ -121,7 +112,7 @@ export class BetsService {
     return this.betMapper.toResponseDto(bet);
   }
 
-  // Reintento del pago de una apuesta rechazada; no crea una apuesta nueva
+  // Reintento del pago de una apuesta antigua que quedó rechazada; ahora se cobra del monedero
   async retryPayment(userId: number, betId: number): Promise<BetResponseDto> {
     const bet = await this.betsRepository.findOne({
       where: { id: betId, fan: { userId } },
@@ -134,10 +125,10 @@ export class BetsService {
       throw new BadRequestException('Solo se puede reintentar el pago de una apuesta rechazada');
     }
     this.ensureOpenForBetting(bet.match);
-    // Antes de cobrar se marca pendiente con el bloqueo del aficionado: si mientras tanto creó otra
-    // apuesta viva para el partido, el reintento se rechaza.
-    await this.markPendingWithFanLock(bet);
-    return this.charge(bet);
+    const [paymentMethod, paymentGateway] = await this.findWalletFunding();
+    bet.paymentMethod = paymentMethod;
+    bet.paymentGateway = paymentGateway;
+    return this.betMapper.toResponseDto(await this.retryWithFunds(bet));
   }
 
   async findByMatch(matchId: number): Promise<BetResponseDto[]> {
@@ -157,34 +148,48 @@ export class BetsService {
         match: { id: matchId },
         status: In([BetStatus.ACTIVE, BetStatus.WON, BetStatus.LOST]),
       },
+      relations: { fan: true, paymentMethod: true },
     });
     if (bets.length === 0) return;
 
     const outcome = outcomeOf(homeScore, awayScore);
     const settledAt = new Date();
-    for (const bet of bets) {
-      bet.status = bet.selection === outcome ? BetStatus.WON : BetStatus.LOST;
-      bet.settledAt = settledAt;
-    }
-    await this.betsRepository.save(bets);
+    await this.dataSource.transaction(async (manager) => {
+      for (const bet of bets) {
+        const nextStatus = bet.selection === outcome ? BetStatus.WON : BetStatus.LOST;
+        if (bet.paymentMethod?.code === WALLET_PAYMENT_METHOD_CODE) {
+          await this.syncWalletWithResult(bet, nextStatus, manager);
+        }
+        bet.status = nextStatus;
+        bet.settledAt = settledAt;
+      }
+      await manager.getRepository(Bet).save(bets);
+    });
   }
 
-  // Anula las apuestas vivas cuando el partido se cancela
+  // Anula las apuestas vivas cuando el partido se cancela y devuelve el monto al monedero
   async voidMatch(matchId: number): Promise<void> {
     const bets = await this.betsRepository.find({
       where: {
         match: { id: matchId },
         status: In([BetStatus.PENDING_PAYMENT, BetStatus.ACTIVE]),
       },
+      relations: { fan: true, paymentMethod: true },
     });
     if (bets.length === 0) return;
 
     const settledAt = new Date();
-    for (const bet of bets) {
-      bet.status = BetStatus.VOID;
-      bet.settledAt = settledAt;
-    }
-    await this.betsRepository.save(bets);
+    await this.dataSource.transaction(async (manager) => {
+      for (const bet of bets) {
+        // Solo se devuelve lo que salió del monedero; las apuestas viejas con pasarela no se reembolsan aquí
+        if (bet.status === BetStatus.ACTIVE && bet.paymentMethod?.code === WALLET_PAYMENT_METHOD_CODE) {
+          await this.walletsService.refundBet(manager, bet.fan.id, bet.amount, bet);
+        }
+        bet.status = BetStatus.VOID;
+        bet.settledAt = settledAt;
+      }
+      await manager.getRepository(Bet).save(bets);
+    });
   }
 
   // Usado por el partido: no se puede eliminar ni cambiar de equipos si tiene apuestas
@@ -192,62 +197,60 @@ export class BetsService {
     return this.betsRepository.existsBy({ match: { id: matchId } });
   }
 
-  private saveWithFanLock(bet: Bet, fanId: number): Promise<Bet> {
+  // Método y pasarela con los que se registra una apuesta pagada con el monedero
+  private findWalletFunding() {
+    return Promise.all([
+      this.paymentMethodsService.findActiveByCodeOrFail(WALLET_PAYMENT_METHOD_CODE),
+      this.paymentGatewaysService.findActiveByCodeOrFail(NO_PAYMENT_GATEWAY_CODE),
+    ] as const);
+  }
+
+  // Debita el saldo y guarda la apuesta en la misma transacción
+  private saveWithFunds(bet: Bet, fanId: number): Promise<Bet> {
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SELECT id FROM fans WHERE id = ? FOR UPDATE', [fanId]);
-      const blocking = await manager.getRepository(Bet).existsBy({
-        fan: { id: fanId },
-        match: { id: bet.match.id },
-        status: In([BetStatus.PENDING_PAYMENT, BetStatus.ACTIVE]),
-      });
-      if (blocking) {
-        throw new ConflictException('Ya tienes una apuesta pendiente o activa para este partido');
-      }
+      await this.ensureNoLiveBet(manager, fanId, bet.match.id);
+      const saved = await manager.getRepository(Bet).save(bet);
+      await this.walletsService.debitForBet(manager, fanId, saved.amount, saved);
+      return saved;
+    });
+  }
+
+  // Reintento de pago: vuelve a dejar la apuesta activa cobrando del monedero
+  private retryWithFunds(bet: Bet): Promise<Bet> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT id FROM fans WHERE id = ? FOR UPDATE', [bet.fan.id]);
+      await this.ensureNoLiveBet(manager, bet.fan.id, bet.match.id);
+      await this.walletsService.debitForBet(manager, bet.fan.id, bet.amount, bet);
+      bet.status = BetStatus.ACTIVE;
+      bet.paidAt = new Date();
+      bet.paymentReference = null;
       return manager.getRepository(Bet).save(bet);
     });
   }
 
-  // Reintento de pago: vuelve a dejar la apuesta pendiente y valida que no haya otra apuesta viva
-  private async markPendingWithFanLock(bet: Bet): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await manager.query('SELECT id FROM fans WHERE id = ? FOR UPDATE', [bet.fan.id]);
-      const blocking = await manager.getRepository(Bet).existsBy({
-        fan: { id: bet.fan.id },
-        match: { id: bet.match.id },
-        status: In([BetStatus.PENDING_PAYMENT, BetStatus.ACTIVE]),
-      });
-      if (blocking) {
-        throw new ConflictException('Ya tienes una apuesta pendiente o activa para este partido');
-      }
-      bet.status = BetStatus.PENDING_PAYMENT;
-      await manager.getRepository(Bet).save(bet);
+  private async ensureNoLiveBet(manager: EntityManager, fanId: number, matchId: number): Promise<void> {
+    const blocking = await manager.getRepository(Bet).existsBy({
+      fan: { id: fanId },
+      match: { id: matchId },
+      status: In([BetStatus.PENDING_PAYMENT, BetStatus.ACTIVE]),
     });
+    if (blocking) {
+      throw new ConflictException('Ya tienes una apuesta pendiente o activa para este partido');
+    }
   }
 
-  // Cobra con la pasarela y deja la apuesta activa o rechazada
-  private async charge(bet: Bet): Promise<BetResponseDto> {
-    try {
-      const result = await this.paymentGateway.charge({
-        betCode: bet.code,
-        amount: bet.amount,
-        paymentMethodCode: bet.paymentMethod.code,
-        gatewayCode: bet.paymentGateway.code,
-      });
-      bet.paymentReference = result.reference;
-      if (result.approved) {
-        bet.status = BetStatus.ACTIVE;
-        bet.paidAt = new Date();
-      } else {
-        bet.status = BetStatus.PAYMENT_FAILED;
-        bet.paidAt = null;
-      }
-    } catch (error) {
-      // Un fallo de la pasarela no rompe la apuesta: queda rechazada y se puede reintentar
-      this.logger.error(`No se pudo cobrar la apuesta ${bet.code}: ${(error as Error).message}`);
-      bet.status = BetStatus.PAYMENT_FAILED;
-      bet.paidAt = null;
+  // Ajusta el saldo según la transición de la apuesta: paga al ganar y revierte si una ganancia se convierte en derrota
+  private async syncWalletWithResult(
+    bet: Bet,
+    nextStatus: BetStatus,
+    manager: EntityManager,
+  ): Promise<void> {
+    if (nextStatus === BetStatus.WON && bet.status !== BetStatus.WON) {
+      await this.walletsService.creditBetWin(manager, bet.fan.id, bet.potentialPayout, bet);
+    } else if (nextStatus === BetStatus.LOST && bet.status === BetStatus.WON) {
+      await this.walletsService.reverseBetWin(manager, bet.fan.id, bet.potentialPayout, bet);
     }
-    return this.betMapper.toResponseDto(await this.betsRepository.save(bet));
   }
 
   private async findMatchOrFail(id: number): Promise<Match> {
@@ -276,10 +279,6 @@ export class BetsService {
   private generateCode(): string {
     return `AP-${randomBytes(4).toString('hex').toUpperCase()}`;
   }
-}
-
-function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function outcomeOf(homeScore: number, awayScore: number): BetSelection {

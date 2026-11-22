@@ -91,14 +91,25 @@ Reglas principales de competencias:
   - **Anotación y resultado (GC-07):** aficionados activos con boleto vigente o apuesta pagada para el partido.
   - Variables: `MS_NOTIFICATIONS` y `NOTIFICATIONS_INTERNAL_KEY` (la misma de ms-notificaciones).
 
-### Apuestas (HU-GC-11)
+### Apuestas y monedero (HU-GC-11)
 
 | Recurso | Rutas |
 |---|---|
 | Métodos de pago | `GET/POST /payment-methods`, `GET/PATCH /payment-methods/:id`, `PATCH /payment-methods/:id/status` |
 | Pasarelas | `GET/POST /payment-gateways`, `GET/PATCH /payment-gateways/:id`, `PATCH /payment-gateways/:id/status` |
+| Monedero del aficionado | `POST/GET /fans/me/wallet`, `GET /fans/me/wallet/movements`, `POST /fans/me/wallet/recharges` |
+| Monedero (administración) | `GET /fans/:fanId/wallet`, `POST /wallets/:id/adjustments`, `PATCH /wallets/:id/status`, `DELETE /wallets/:id` |
 | Cuotas | `GET/POST/PUT /matches/:matchId/odds`, `PATCH /odds/:id` |
 | Apuestas | `GET /bets/upcoming-matches`, `POST/GET /fans/me/bets`, `GET /fans/me/bets/:id`, `POST /fans/me/bets/:id/pay`, `GET /matches/:matchId/bets` |
+
+Reglas principales del monedero:
+
+- **Un monedero por aficionado:** se crea junto con el perfil; también se puede crear con `POST /fans/me/wallet`. La migración lo crea para los aficionados existentes.
+- **Recargas:** entre 1.000 y 5.000.000 COP por operación. Se cobran con la pasarela simulada y el saldo solo se acredita si el pago se aprueba.
+- **Ajustes:** solo el administrador, con motivo obligatorio y registrado en el historial. Un ajuste no puede dejar el saldo negativo.
+- **Historial:** cada cambio de saldo genera un movimiento (`RECHARGE`, `BET_DEBIT`, `BET_WIN`, `BET_WIN_REVERSAL`, `BET_REFUND`, `ADJUSTMENT`). El monto es positivo si entra dinero y negativo si sale; `balanceAfter` guarda el saldo resultante.
+- **Eliminar:** solo si el saldo es 0 y no tiene movimientos; si no, se desactiva. Un monedero inactivo no permite recargar, ajustar ni apostar.
+- **Saldo negativo:** solo puede aparecer al revertir una ganancia ya gastada. `availableBalance` se muestra en 0 y no se puede apostar hasta recargar.
 
 Reglas principales de apuestas:
 
@@ -109,9 +120,11 @@ Reglas principales de apuestas:
   - `PUT /matches/:matchId/odds` guarda el set completo: crea o actualiza las selecciones enviadas y desactiva las que no vengan.
   - `GET /matches` permite filtrar por `status`, `tournamentId` y `phaseId`, e incluye las cuotas de cada partido.
 - **Monto:** entre 1.000 y 1.000.000 COP. La ganancia potencial (`amount * odds`) la calcula el servidor.
-- **Pago:** cada apuesta guarda su método de pago y su pasarela. En esta etapa la pasarela es simulada (`SimulatedPaymentGateway`); el contrato `PaymentGatewayPort` queda listo para Wompi/PayU.
-- **Estados:** `PENDING_PAYMENT` → `ACTIVE` → `WON`/`LOST`; `PAYMENT_FAILED` permite reintentar el pago o crear otra apuesta; `VOID` cuando se cancela el partido.
-- **Liquidación:** al registrar o corregir el resultado, `MatchesService` llama a `BetsService.settleMatch` y las apuestas pasan a `WON` o `LOST`. Al cancelar el partido pasan a `VOID`.
+- **Pago:** se debita del monedero en la misma transacción que crea la apuesta. Si no hay saldo suficiente, responde 400 y la apuesta no se crea. Se registra con el método `WALLET` y la pasarela `NONE`.
+- **Estados:** `ACTIVE` → `WON`/`LOST`; `VOID` cuando se cancela el partido. `PENDING_PAYMENT` y `PAYMENT_FAILED` solo existen en apuestas anteriores al monedero; el reintento de pago ahora cobra del monedero.
+- **Liquidación:** al registrar o corregir el resultado, `MatchesService` llama a `BetsService.settleMatch`. Ganar acredita `potentialPayout`; corregir `WON` a `LOST` revierte la ganancia; `LOST` a `WON` la acredita; `WON` a `WON` no repite el abono.
+- **Anulación:** al cancelar el partido, las apuestas `ACTIVE` pagadas con `WALLET` devuelven el monto al monedero.
+- **Concurrencia:** el débito bloquea la fila del aficionado y la del monedero (`SELECT ... FOR UPDATE`), así dos apuestas simultáneas no pueden gastar el mismo saldo.
 - **Notificaciones:** los avisos de anotación y resultado incluyen también a los apostadores con pago aprobado.
 
 ## Reglas principales
