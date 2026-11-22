@@ -3,7 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
+import { BetsModule } from './bets/bets.module';
 import { SecurityGuard } from './common/guards/security.guard';
+import { PaymentsModule } from './payments/payments.module';
 import { PlayerContractsModule } from './player-contracts/player-contracts.module';
 import { PlayerProfilesModule } from './player-profiles/player-profiles.module';
 import { PlayerSkillsModule } from './player-skills/player-skills.module';
@@ -66,6 +68,9 @@ import { VenuesModule } from './venues/venues.module';
     // Boletería (Localidad y Boleto)
     VenueSectionsModule,
     TicketsModule,
+    // Apuestas (métodos de pago, pasarelas, cuotas y apuestas)
+    PaymentsModule,
+    BetsModule,
     // Eventos en tiempo real (Socket.IO)
     LiveEventsModule,
   ],

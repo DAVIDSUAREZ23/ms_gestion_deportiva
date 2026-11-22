@@ -72,7 +72,7 @@ Cada recurso tiene `dto/`, `entities/`, `mappers/`, controlador, servicio y mód
 | Inscripciones (GC-02) | `POST /tournament-registrations`, `DELETE /tournament-registrations/:tournamentId/:teamId`, `GET /tournaments/:id/teams`, `GET /teams/:id/tournaments` |
 | Fases (GC-03 y GC-05) | `POST /phases`, `GET/PATCH/DELETE /phases/:id`, `GET /tournaments/:id/phases` |
 | Grupos (GC-04) | `POST /groups`, `GET/PATCH/DELETE /groups/:id`, `GET /phases/:id/groups`, `POST /group-teams`, `DELETE /group-teams/:groupId/:teamId` |
-| Partidos (GC-06) | `POST /matches`, `GET/PATCH/DELETE /matches/:id`, `PATCH /matches/:id/result`, `PATCH /matches/:id/cancel`, `GET /phases/:id/matches` |
+| Partidos (GC-06) | `POST /matches`, `GET /matches`, `GET/PATCH/DELETE /matches/:id`, `PATCH /matches/:id/result`, `PATCH /matches/:id/cancel`, `GET /phases/:id/matches` |
 | Anotaciones (GC-07) | `POST /match-annotations`, `PATCH/DELETE /match-annotations/:id`, `GET /matches/:id/annotations` |
 | Desarrollo (GC-08) | `GET /tournaments/:id/overview` |
 
@@ -88,8 +88,31 @@ Reglas principales de competencias:
 - **Tabla de posiciones:** 3 puntos por victoria y 1 por empate. Desempata la diferencia de gol, luego los goles a favor.
 - **Notificaciones** (partido nuevo, anotación y resultado): pasan por `NotificationsService`, que decide a quién avisar y le pide el envío al ms de notificaciones (`POST {MS_NOTIFICATIONS}/send-match-notification`, con la cabecera `X-Internal-Key`). El envío no espera respuesta y un fallo solo se registra en el log; nunca rompe la operación.
   - **Partido nuevo (GC-06):** aficionados activos con boleto vigente en partidos ya finalizados y anteriores donde jugó alguno de los dos equipos.
-  - **Anotación y resultado (GC-07):** aficionados activos con boleto vigente para el partido. Las apuestas se sumarán cuando existan (HU-GC-11).
+  - **Anotación y resultado (GC-07):** aficionados activos con boleto vigente o apuesta pagada para el partido.
   - Variables: `MS_NOTIFICATIONS` y `NOTIFICATIONS_INTERNAL_KEY` (la misma de ms-notificaciones).
+
+### Apuestas (HU-GC-11)
+
+| Recurso | Rutas |
+|---|---|
+| Métodos de pago | `GET/POST /payment-methods`, `GET/PATCH /payment-methods/:id`, `PATCH /payment-methods/:id/status` |
+| Pasarelas | `GET/POST /payment-gateways`, `GET/PATCH /payment-gateways/:id`, `PATCH /payment-gateways/:id/status` |
+| Cuotas | `GET/POST/PUT /matches/:matchId/odds`, `PATCH /odds/:id` |
+| Apuestas | `GET /bets/upcoming-matches`, `POST/GET /fans/me/bets`, `GET /fans/me/bets/:id`, `POST /fans/me/bets/:id/pay`, `GET /matches/:matchId/bets` |
+
+Reglas principales de apuestas:
+
+- **Una apuesta viva por partido:** un aficionado no puede tener dos apuestas `PENDING_PAYMENT` o `ACTIVE` para el mismo partido. Si la anterior quedó `PAYMENT_FAILED` o `VOID`, puede apostar de nuevo.
+- **Partido abierto:** solo se apuesta a partidos `SCHEDULED` con fecha futura.
+- **Cuotas:** las define el administrador y solo se editan mientras el partido está programado. La cuota se congela al apostar; las apuestas existentes no cambian si luego se edita.
+  - Se pueden enviar al crear el partido con el campo `odds` de `POST /matches`.
+  - `PUT /matches/:matchId/odds` guarda el set completo: crea o actualiza las selecciones enviadas y desactiva las que no vengan.
+  - `GET /matches` permite filtrar por `status`, `tournamentId` y `phaseId`, e incluye las cuotas de cada partido.
+- **Monto:** entre 1.000 y 1.000.000 COP. La ganancia potencial (`amount * odds`) la calcula el servidor.
+- **Pago:** cada apuesta guarda su método de pago y su pasarela. En esta etapa la pasarela es simulada (`SimulatedPaymentGateway`); el contrato `PaymentGatewayPort` queda listo para Wompi/PayU.
+- **Estados:** `PENDING_PAYMENT` → `ACTIVE` → `WON`/`LOST`; `PAYMENT_FAILED` permite reintentar el pago o crear otra apuesta; `VOID` cuando se cancela el partido.
+- **Liquidación:** al registrar o corregir el resultado, `MatchesService` llama a `BetsService.settleMatch` y las apuestas pasan a `WON` o `LOST`. Al cancelar el partido pasan a `VOID`.
+- **Notificaciones:** los avisos de anotación y resultado incluyen también a los apostadores con pago aprobado.
 
 ## Reglas principales
 

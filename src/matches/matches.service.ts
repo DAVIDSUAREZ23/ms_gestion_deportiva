@@ -1,6 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, FindOptionsWhere, Not, Repository } from 'typeorm';
+import { OddMapper } from '../bets/mappers/odd.mapper';
+import { BetsService } from '../bets/services/bets.service';
+import { OddsService } from '../bets/services/odds.service';
 import { toIsoDate } from '../common/utils/date.utils';
 import { CompetitionGroup } from '../groups/entities/competition-group.entity';
 import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
@@ -17,7 +20,9 @@ import { TournamentVenuesService } from '../tournament-venues/tournament-venues.
 import { Venue } from '../venues/entities/venue.entity';
 import { VenuesService } from '../venues/venues.service';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { FindMatchesQueryDto } from './dto/find-matches-query.dto';
 import { MatchResponseDto } from './dto/match-response.dto';
+import { MatchWithOddsResponseDto } from './dto/match-with-odds-response.dto';
 import { RegisterResultDto } from './dto/register-result.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
 import { Match, MatchStatus } from './entities/match.entity';
@@ -49,6 +54,7 @@ export class MatchesService {
     @InjectRepository(Match) private readonly matchesRepository: Repository<Match>,
     @InjectRepository(MatchAnnotation) private readonly annotationsRepository: Repository<MatchAnnotation>,
     @InjectRepository(Ticket) private readonly ticketsRepository: Repository<Ticket>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly phasesService: PhasesService,
     private readonly groupsService: GroupsService,
     private readonly teamsService: TeamsService,
@@ -56,13 +62,23 @@ export class MatchesService {
     private readonly registrationsService: TournamentRegistrationsService,
     private readonly tournamentVenuesService: TournamentVenuesService,
     private readonly notificationsService: NotificationsService,
+    private readonly betsService: BetsService,
+    private readonly oddsService: OddsService,
+    private readonly oddMapper: OddMapper,
     private readonly matchMapper: MatchMapper,
     private readonly liveEvents: LiveEventsGateway,
   ) {}
 
   async create(dto: CreateMatchDto): Promise<MatchResponseDto> {
     const plan = await this.resolvePlan(dto);
-    const saved = await this.matchesRepository.save(Object.assign(new Match(), plan));
+    // El partido y sus cuotas iniciales se guardan juntos: si una cuota falla, no queda el partido a medias
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const match = await manager.getRepository(Match).save(Object.assign(new Match(), plan));
+      if (dto.odds?.length) {
+        await this.oddsService.replaceForMatch(match.id, dto.odds, manager);
+      }
+      return match;
+    });
     await this.notificationsService.notifyMatchCreated({
       matchId: saved.id,
       homeTeamId: plan.homeTeam.id,
@@ -90,6 +106,27 @@ export class MatchesService {
     return this.matchMapper.toResponseDtoList(matches);
   }
 
+  // Listado de partidos con sus cuotas, usado por la pantalla de administración de cuotas
+  async findAll(query: FindMatchesQueryDto): Promise<MatchWithOddsResponseDto[]> {
+    const phaseFilter: FindOptionsWhere<Phase> = {};
+    if (query.phaseId !== undefined) phaseFilter.id = query.phaseId;
+    if (query.tournamentId !== undefined) phaseFilter.tournament = { id: query.tournamentId };
+
+    const where: FindOptionsWhere<Match> = {};
+    if (query.status !== undefined) where.status = query.status;
+    if (Object.keys(phaseFilter).length > 0) where.phase = phaseFilter;
+
+    const matches = await this.matchesRepository.find({
+      where,
+      relations: { ...MATCH_RELATIONS, odds: true },
+      order: { scheduledAt: 'ASC' },
+    });
+    return matches.map((match) => ({
+      ...this.matchMapper.toResponseDto(match),
+      odds: this.oddMapper.toResponseDtoListForMatch(match.odds ?? [], match),
+    }));
+  }
+
   async findOne(id: number): Promise<MatchResponseDto> {
     return this.matchMapper.toResponseDto(await this.findOrFail(id));
   }
@@ -100,6 +137,9 @@ export class MatchesService {
     this.ensureIsScheduled(match);
     if (this.changesTeams(match, dto) && (await this.hasAnnotations(id))) {
       throw new ConflictException('No se pueden cambiar los equipos de un partido que ya tiene anotaciones');
+    }
+    if (this.changesTeams(match, dto) && (await this.betsService.hasBets(id))) {
+      throw new ConflictException('No se pueden cambiar los equipos de un partido con apuestas registradas');
     }
     if (this.changesVenue(match, dto) && (await this.hasTickets(id))) {
       throw new ConflictException('No se puede cambiar el escenario de un partido con boletos vendidos');
@@ -122,8 +162,15 @@ export class MatchesService {
 
   async remove(id: number): Promise<{ message: string }> {
     const match = await this.findOrFail(id);
-    if (match.status === MatchStatus.FINISHED || (await this.hasAnnotations(id)) || (await this.hasTickets(id))) {
-      throw new ConflictException('No se puede eliminar un partido con resultado, anotaciones o boletos vendidos. Puedes cancelarlo.');
+    if (
+      match.status === MatchStatus.FINISHED ||
+      (await this.hasAnnotations(id)) ||
+      (await this.hasTickets(id)) ||
+      (await this.betsService.hasBets(id))
+    ) {
+      throw new ConflictException(
+        'No se puede eliminar un partido con resultado, anotaciones, boletos o apuestas. Puedes cancelarlo.',
+      );
     }
     await this.matchesRepository.remove(match);
     return { message: `Partido ${match.homeTeam.name} vs ${match.awayTeam.name} eliminado correctamente` };
@@ -141,6 +188,7 @@ export class MatchesService {
     const wasFinished = match.status === MatchStatus.FINISHED;
     Object.assign(match, { homeScore: dto.homeScore, awayScore: dto.awayScore, status: MatchStatus.FINISHED });
     await this.matchesRepository.save(match);
+    await this.betsService.settleMatch(id, dto.homeScore, dto.awayScore);
     await this.notificationsService.notifyMatchResult({
       matchId: id,
       homeTeamId: match.homeTeam.id,
@@ -167,6 +215,7 @@ export class MatchesService {
     this.ensureIsScheduled(match);
     match.status = MatchStatus.CANCELLED;
     await this.matchesRepository.save(match);
+    await this.betsService.voidMatch(id);
     this.liveEvents.broadcast({
       type: 'match_cancelled',
       message: `Partido cancelado: ${match.homeTeam.name} vs ${match.awayTeam.name}`,

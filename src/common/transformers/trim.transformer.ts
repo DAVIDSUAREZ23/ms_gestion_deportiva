@@ -10,3 +10,7 @@ export const TrimToNull = () =>
     const trimmed = value.trim();
     return trimmed === '' ? null : trimmed;
   });
+
+// Códigos de catálogo: sin espacios y en mayúsculas (p. ej. CARD, WOMPI)
+export const UpperTrim = () =>
+  Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value));

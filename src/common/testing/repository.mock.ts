@@ -12,7 +12,11 @@ export function createRepositoryMock<T extends ObjectLiteral>(): RepositoryMock<
     findOneBy: jest.fn(),
     exists: jest.fn().mockResolvedValue(false),
     existsBy: jest.fn().mockResolvedValue(false),
-    save: jest.fn((entity) => Promise.resolve({ id: 1, ...entity })),
+    save: jest.fn((entity) => {
+      // Conserva el id si la entidad ya lo trae; si es nueva, asigna 1
+      const id = (entity as { id?: number }).id ?? 1;
+      return Promise.resolve({ ...entity, id });
+    }),
     remove: jest.fn((entity) => Promise.resolve(entity)),
   } as unknown as RepositoryMock<T>;
 }

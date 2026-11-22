@@ -1,21 +1,30 @@
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
+import { Bet } from '../bets/entities/bet.entity';
 import { Fan } from '../fans/entities/fan.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
 import { NotificationsClient } from './notifications.client';
 import { NotificationsService } from './notifications.service';
 
 const ticketOf = (email: string) => Object.assign(new Ticket(), { fan: Object.assign(new Fan(), { email, active: true }) });
+const betOf = (email: string) => Object.assign(new Bet(), { fan: Object.assign(new Fan(), { email, active: true }) });
 const match = { matchId: 1, homeTeamId: 10, awayTeamId: 11, homeTeam: 'Once Caldas', awayTeam: 'Nacional' };
 
 describe('NotificationsService (a quién se avisa y qué se envía al ms de notificaciones)', () => {
   let ticketsRepository: RepositoryMock<Ticket>;
+  let betsRepository: RepositoryMock<Bet>;
   let client: { sendMatchNotification: jest.Mock };
   let service: NotificationsService;
 
   beforeEach(() => {
     ticketsRepository = createRepositoryMock<Ticket>();
+    betsRepository = createRepositoryMock<Bet>();
+    betsRepository.find.mockResolvedValue([]);
     client = { sendMatchNotification: jest.fn().mockResolvedValue(undefined) };
-    service = new NotificationsService(asRepository(ticketsRepository), client as unknown as NotificationsClient);
+    service = new NotificationsService(
+      asRepository(ticketsRepository),
+      asRepository(betsRepository),
+      client as unknown as NotificationsClient,
+    );
     jest.spyOn((service as unknown as { logger: { log: () => void } }).logger, 'log').mockImplementation();
   });
 
@@ -63,6 +72,17 @@ describe('NotificationsService (a quién se avisa y qué se envía al ms de noti
         recipients: ['boleta@correo.com'],
         message: 'Anotó Ana Gómez (Once Caldas) al minuto 10.',
       }),
+    );
+  });
+
+  it('anotación: incluye a los apostadores activos del partido sin repetir correos', async () => {
+    ticketsRepository.find.mockResolvedValue([ticketOf('boleta@correo.com')]);
+    betsRepository.find.mockResolvedValue([betOf('apuesta@correo.com'), betOf('boleta@correo.com')]);
+
+    await service.notifyAnnotation({ ...match, playerName: 'Ana Gómez', teamName: 'Once Caldas', minute: 10 });
+
+    expect(client.sendMatchNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ recipients: ['boleta@correo.com', 'apuesta@correo.com'] }),
     );
   });
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, LessThan, Repository } from 'typeorm';
+import { Bet, BetStatus } from '../bets/entities/bet.entity';
 import { MatchStatus } from '../matches/entities/match.entity';
 import { Ticket, TicketStatus } from '../tickets/entities/ticket.entity';
 import { NotificationsClient } from './notifications.client';
@@ -42,6 +43,7 @@ export class NotificationsService {
 
   constructor(
     @InjectRepository(Ticket) private readonly ticketsRepository: Repository<Ticket>,
+    @InjectRepository(Bet) private readonly betsRepository: Repository<Bet>,
     private readonly notificationsClient: NotificationsClient,
   ) {}
 
@@ -54,7 +56,7 @@ export class NotificationsService {
     ]);
   }
 
-  // Anotación registrada (GC-07): aficionados con boleto o apuesta sobre el partido (las apuestas aún no existen)
+  // Anotación registrada (GC-07): aficionados con boleto o apuesta sobre el partido
   async notifyAnnotation(annotation: AnnotationNotification): Promise<void> {
     const recipients = await this.holdersOf(annotation.matchId);
     const title = `${annotation.homeTeam} vs ${annotation.awayTeam}`;
@@ -84,20 +86,33 @@ export class NotificationsService {
       ],
       relations: { fan: true },
     });
-    return this.uniqueEmails(tickets);
+    return this.uniqueEmails(tickets.map((ticket) => ticket.fan.email));
   }
 
-  // Correos (sin repetir) de los aficionados activos con boleto vigente para el partido
+  // Correos (sin repetir) de los aficionados activos con boleto vigente o apuesta pagada para el partido
   private async holdersOf(matchId: number): Promise<string[]> {
-    const tickets = await this.ticketsRepository.find({
-      where: { match: { id: matchId }, status: TicketStatus.ACTIVE, fan: { active: true } },
-      relations: { fan: true },
-    });
-    return this.uniqueEmails(tickets);
+    const [tickets, bets] = await Promise.all([
+      this.ticketsRepository.find({
+        where: { match: { id: matchId }, status: TicketStatus.ACTIVE, fan: { active: true } },
+        relations: { fan: true },
+      }),
+      this.betsRepository.find({
+        where: {
+          match: { id: matchId },
+          status: In([BetStatus.ACTIVE, BetStatus.WON, BetStatus.LOST]),
+          fan: { active: true },
+        },
+        relations: { fan: true },
+      }),
+    ]);
+    return this.uniqueEmails([
+      ...tickets.map((ticket) => ticket.fan.email),
+      ...bets.map((bet) => bet.fan.email),
+    ]);
   }
 
-  private uniqueEmails(tickets: Ticket[]): string[] {
-    return [...new Set(tickets.map((ticket) => ticket.fan.email))];
+  private uniqueEmails(emails: string[]): string[] {
+    return [...new Set(emails)];
   }
 
   // Pide el envío sin esperar la respuesta: crear un partido o registrar una anotación no debe tardar por los correos

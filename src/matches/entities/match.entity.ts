@@ -1,4 +1,5 @@
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { MatchOdd } from '../../bets/entities/match-odd.entity';
 import { CompetitionGroup } from '../../groups/entities/competition-group.entity';
 import { MatchAnnotation } from '../../match-annotations/entities/match-annotation.entity';
 import { Phase } from '../../phases/entities/phase.entity';
@@ -55,4 +56,7 @@ export class Match {
 
   @OneToMany(() => MatchAnnotation, (annotation) => annotation.match)
   annotations!: MatchAnnotation[];
+
+  @OneToMany(() => MatchOdd, (odd) => odd.match)
+  odds!: MatchOdd[];
 }

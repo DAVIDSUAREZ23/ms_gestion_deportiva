@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { FindMatchesQueryDto } from './dto/find-matches-query.dto';
 import { RegisterResultDto } from './dto/register-result.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
 import { MatchesService } from './matches.service';
@@ -16,6 +17,11 @@ export class MatchesController {
   @Get('phases/:phaseId/matches')
   findByPhase(@Param('phaseId', ParseIntPipe) phaseId: number) {
     return this.matchesService.findByPhase(phaseId);
+  }
+
+  @Get('matches')
+  findAll(@Query() query: FindMatchesQueryDto) {
+    return this.matchesService.findAll(query);
   }
 
   @Get('matches/:id')

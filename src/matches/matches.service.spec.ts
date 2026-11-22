@@ -1,4 +1,9 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import { BetSelection, MatchOdd } from '../bets/entities/match-odd.entity';
+import { OddMapper } from '../bets/mappers/odd.mapper';
+import { BetsService } from '../bets/services/bets.service';
+import { OddsService } from '../bets/services/odds.service';
 import { AWAY, buildGroup, buildMatch, buildPhase, HOME, OUTSIDER } from '../common/testing/competition.fixtures';
 import { asRepository, createRepositoryMock, RepositoryMock } from '../common/testing/repository.mock';
 import { LiveEventsGateway } from '../gateways/live-events/live-events.gateway';
@@ -41,6 +46,8 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
   let phasesService: { findOrFail: jest.Mock };
   let groupsService: { findOrFail: jest.Mock };
   let notificationsService: { notifyMatchCreated: jest.Mock; notifyMatchResult: jest.Mock };
+  let betsService: { settleMatch: jest.Mock; voidMatch: jest.Mock; hasBets: jest.Mock };
+  let oddsService: { replaceForMatch: jest.Mock };
   let service: MatchesService;
 
   beforeEach(() => {
@@ -51,13 +58,25 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     phasesService = { findOrFail: jest.fn().mockResolvedValue(GROUP_PHASE) };
     groupsService = { findOrFail: jest.fn().mockResolvedValue(buildGroup(GROUP_PHASE, [HOME, AWAY])) };
     notificationsService = { notifyMatchCreated: jest.fn(), notifyMatchResult: jest.fn() };
+    betsService = {
+      settleMatch: jest.fn().mockResolvedValue(undefined),
+      voidMatch: jest.fn().mockResolvedValue(undefined),
+      hasBets: jest.fn().mockResolvedValue(false),
+    };
     const teamsService = { findActiveOrFail: jest.fn((id: number) => Promise.resolve(TEAMS[id])) };
     const registrationsService = { ensureRegistered: jest.fn().mockResolvedValue(undefined) };
+    oddsService = { replaceForMatch: jest.fn().mockResolvedValue([]) };
+    const dataSource = {
+      transaction: jest.fn((callback: (manager: unknown) => Promise<unknown>) =>
+        callback({ getRepository: () => matchesRepository }),
+      ),
+    } as unknown as DataSource;
     const phaseMapper = new PhaseMapper(new TournamentMapper(new SportMapper()));
     service = new MatchesService(
       asRepository(matchesRepository),
       asRepository(annotationsRepository),
       asRepository(ticketsRepository),
+      dataSource,
       phasesService as unknown as PhasesService,
       groupsService as unknown as GroupsService,
       teamsService as unknown as TeamsService,
@@ -65,6 +84,9 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
       registrationsService as unknown as TournamentRegistrationsService,
       { ensureVenueAllowed: jest.fn() } as unknown as TournamentVenuesService,
       notificationsService as unknown as NotificationsService,
+      betsService as unknown as BetsService,
+      oddsService as unknown as OddsService,
+      new OddMapper(),
       new MatchMapper(phaseMapper, new GroupMapper(phaseMapper, new TeamMapper()), new TeamMapper(), new VenueMapper()),
       { broadcast: jest.fn() } as unknown as LiveEventsGateway,
     );
@@ -77,6 +99,52 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
 
     expect(matchesRepository.save).toHaveBeenCalled();
     expect(notificationsService.notifyMatchCreated).toHaveBeenCalled();
+  });
+
+  it('create con cuotas las guarda en la misma transacción del partido', async () => {
+    matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE));
+    const odds = [{ selection: BetSelection.HOME, odds: 2.1 }];
+
+    await service.create({ ...GROUP_MATCH, odds });
+
+    expect(oddsService.replaceForMatch).toHaveBeenCalledWith(1, odds, expect.anything());
+  });
+
+  it('create sin cuotas no llama al servicio de cuotas', async () => {
+    matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE));
+
+    await service.create(GROUP_MATCH);
+
+    expect(oddsService.replaceForMatch).not.toHaveBeenCalled();
+  });
+
+  it('findAll filtra por estado y devuelve las cuotas del partido', async () => {
+    // TypeORM carga las cuotas como hijas del partido, sin la relación inversa odd.match
+    const odd = Object.assign(new MatchOdd(), {
+      id: 1,
+      selection: BetSelection.HOME,
+      odds: 2.1,
+      active: true,
+    });
+    matchesRepository.find.mockResolvedValue([buildMatch(GROUP_PHASE, { odds: [odd] })]);
+
+    const result = await service.findAll({ status: MatchStatus.SCHEDULED });
+
+    expect(matchesRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: MatchStatus.SCHEDULED } }),
+    );
+    expect(result[0].odds).toHaveLength(1);
+    expect(result[0].odds[0].matchId).toBe(50);
+  });
+
+  it('findAll combina los filtros de fase y torneo', async () => {
+    matchesRepository.find.mockResolvedValue([]);
+
+    await service.findAll({ phaseId: 20, tournamentId: 5 });
+
+    expect(matchesRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { phase: { id: 20, tournament: { id: 5 } } } }),
+    );
   });
 
   it('create con un equipo contra sí mismo responde solicitud inválida', async () => {
@@ -112,6 +180,7 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
     await service.registerResult(50, { homeScore: 2, awayScore: 1 });
 
     expect(match.status).toBe(MatchStatus.FINISHED);
+    expect(betsService.settleMatch).toHaveBeenCalledWith(50, 2, 1);
     expect(notificationsService.notifyMatchResult).toHaveBeenCalledWith(expect.objectContaining({ corrected: false }));
   });
 
@@ -138,6 +207,14 @@ describe('MatchesService (HU-GC-06 y resultados HU-GC-07)', () => {
   it('remove de un partido con boletos vendidos responde conflicto', async () => {
     matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE));
     ticketsRepository.existsBy.mockResolvedValue(true);
+
+    await expect(service.remove(50)).rejects.toThrow(ConflictException);
+    expect(matchesRepository.remove).not.toHaveBeenCalled();
+  });
+
+  it('remove de un partido con apuestas responde conflicto', async () => {
+    matchesRepository.findOne.mockResolvedValue(buildMatch(GROUP_PHASE));
+    betsService.hasBets.mockResolvedValue(true);
 
     await expect(service.remove(50)).rejects.toThrow(ConflictException);
     expect(matchesRepository.remove).not.toHaveBeenCalled();
